@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 type EnitServiceState uint8
@@ -229,7 +230,7 @@ func (service *EnitService) StartService() error {
 		return nil
 	}
 
-	cmd := exec.Command("/bin/sh", "-c", service.StartCmd)
+	cmd := exec.Command("/bin/sh", "-c", "exec "+service.StartCmd)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -271,9 +272,27 @@ func (service *EnitService) StopService() error {
 			return nil
 		}
 		go func() { service.stopChannel <- true }()
-		err := service.GetProcess().Kill()
+
+		err := service.GetProcess().Signal(syscall.SIGTERM)
 		if err != nil {
 			return err
+		}
+
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		timer := time.NewTimer(5 * time.Second)
+		defer timer.Stop()
+
+		select {
+		case <-timer.C:
+			err := service.GetProcess().Kill()
+			if err != nil {
+				return err
+			}
+		case <-ticker.C:
+			if service.GetProcess() == nil {
+				break
+			}
 		}
 	} else {
 		cmd := exec.Command("/bin/sh", "-c", service.StopCmd)
@@ -305,39 +324,6 @@ func (service *EnitService) RestartService() error {
 	}
 
 	return nil
-}
-
-func checkForServiceCommand() {
-	for _, service := range Services {
-		if _, err := os.Stat(path.Join(service.ServiceRunPath, "start")); err == nil {
-			err := service.StartService()
-			if err != nil {
-				return
-			}
-			err = os.Remove(path.Join(service.ServiceRunPath, "start"))
-			if err != nil {
-				return
-			}
-		} else if _, err := os.Stat(path.Join(service.ServiceRunPath, "stop")); err == nil {
-			err := service.StopService()
-			if err != nil {
-				return
-			}
-			err = os.Remove(path.Join(service.ServiceRunPath, "stop"))
-			if err != nil {
-				return
-			}
-		} else if _, err := os.Stat(path.Join(service.ServiceRunPath, "restart")); err == nil {
-			err := service.RestartService()
-			if err != nil {
-				return
-			}
-			err = os.Remove(path.Join(service.ServiceRunPath, "restart"))
-			if err != nil {
-				return
-			}
-		}
-	}
 }
 
 func listenToSocket() {

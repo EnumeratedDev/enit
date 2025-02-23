@@ -10,6 +10,7 @@ import (
 	"path"
 	"strconv"
 	"syscall"
+	"time"
 )
 
 // Build-time variables
@@ -94,6 +95,39 @@ func startServiceManager() {
 	fmt.Println("Done")
 }
 
+func stopServiceManager() {
+	fmt.Println("Stopping service manager... ")
+
+	err := syscall.Kill(serviceManagerPid, syscall.SIGTERM)
+	if err != nil {
+		log.Println("Could not stop service manager!")
+	}
+	// Check if service manager has stopped gracefully, otherwise send sigkill on timeout
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		log.Println("Could not stop service manager!")
+		err := syscall.Kill(serviceManagerPid, syscall.SIGKILL)
+		if err != nil {
+			log.Println("Could not stop service manager!")
+		}
+	case <-ticker.C:
+		p, err := os.FindProcess(serviceManagerPid)
+		if err != nil {
+			break
+		}
+		err = p.Signal(syscall.Signal(0))
+		if err != nil {
+			break
+		}
+	}
+
+	fmt.Print("Done.")
+}
+
 func waitZombieProcesses() {
 	for {
 		if wpid, _ := syscall.Wait4(-1, nil, syscall.WNOHANG, nil); wpid <= 0 {
@@ -141,17 +175,13 @@ func catchSignals() {
 func shutdownSystem() {
 	fmt.Println("Shutting down...")
 
-	fmt.Println("Stopping services... ")
-	err := syscall.Kill(serviceManagerPid, syscall.SIGTERM)
-	if err != nil {
-		log.Println("Could not stop service manager!")
-		panic(err)
-	}
-	fmt.Print("Done.")
+	stopServiceManager()
+
+	fmt.Println("Syncing disks...")
+	syscall.Sync()
 
 	fmt.Println("Sending shutdown syscall...")
-	syscall.Sync()
-	err = syscall.Reboot(syscall.LINUX_REBOOT_CMD_POWER_OFF)
+	err := syscall.Reboot(syscall.LINUX_REBOOT_CMD_POWER_OFF)
 	if err != nil {
 		panic(err)
 	}
@@ -160,17 +190,13 @@ func shutdownSystem() {
 func rebootSystem() {
 	fmt.Println("Rebooting...")
 
-	fmt.Println("Stopping service manager... ")
-	err := syscall.Kill(serviceManagerPid, syscall.SIGTERM)
-	if err != nil {
-		log.Println("Could not stop service manager!")
-		panic(err)
-	}
-	fmt.Print("Done.")
+	stopServiceManager()
+
+	fmt.Println("Syncing disks...")
+	syscall.Sync()
 
 	fmt.Println("Sending reboot syscall...")
-	syscall.Sync()
-	err = syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
+	err := syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)
 	if err != nil {
 		panic(err)
 	}
