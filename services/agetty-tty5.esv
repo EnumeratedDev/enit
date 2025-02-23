@@ -1,0 +1,5 @@
+name: agetty-tty5
+description: Start virtual terminal on tty5
+type: background
+start_cmd: /sbin/agetty --noclear tty5
+exit_method: kill

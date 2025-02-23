@@ -1,0 +1,5 @@
+name: agetty-tty3
+description: Start virtual terminal on tty3
+type: background
+start_cmd: /sbin/agetty --noclear tty3
+exit_method: kill

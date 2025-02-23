@@ -1,0 +1,5 @@
+name: agetty-tty6
+description: Start virtual terminal on tty6
+type: background
+start_cmd: /sbin/agetty --noclear tty6
+exit_method: kill

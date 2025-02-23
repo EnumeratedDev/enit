@@ -1,0 +1,5 @@
+name: agetty-tty4
+description: Start virtual terminal on tty4
+type: background
+start_cmd: /sbin/agetty --noclear tty4
+exit_method: kill

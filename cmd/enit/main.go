@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"os/signal"
 	"path"
-	"strconv"
 	"syscall"
 	"time"
 )
@@ -48,7 +47,6 @@ func main() {
 	waitZombieProcesses()
 
 	fmt.Println()
-	startTerminal()
 
 	// Catch signals
 	catchSignals()
@@ -132,21 +130,6 @@ func waitZombieProcesses() {
 	for {
 		if wpid, _ := syscall.Wait4(-1, nil, syscall.WNOHANG, nil); wpid <= 0 {
 			break
-		}
-	}
-}
-
-func startTerminal() {
-	for i := 1; i < 6; i++ {
-		cmd := exec.Command("/sbin/agetty", "--noclear", "tty"+strconv.Itoa(i))
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		err := cmd.Start()
-
-		if err != nil {
-			log.Println("Could not start agetty terminal on tty" + strconv.Itoa(i) + "!")
-			panic(err)
 		}
 	}
 }

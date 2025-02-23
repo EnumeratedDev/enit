@@ -1,0 +1,5 @@
+name: agetty-tty2
+description: Start virtual terminal on tty2
+type: background
+start_cmd: /sbin/agetty --noclear tty2
+exit_method: kill
