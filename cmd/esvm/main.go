@@ -35,6 +35,7 @@ type EnitService struct {
 	StartCmd       string `yaml:"start_cmd"`
 	ExitMethod     string `yaml:"exit_method"`
 	StopCmd        string `yaml:"stop_cmd,omitempty"`
+	Restart        bool   `yaml:"restart,omitempty"`
 	ServiceRunPath string
 	stopChannel    chan bool
 }
@@ -118,8 +119,15 @@ func Init() error {
 			}
 
 			service := EnitService{
-				StopCmd:     "",
-				stopChannel: make(chan bool),
+				Name:           "",
+				Description:    "",
+				Type:           "",
+				StartCmd:       "",
+				ExitMethod:     "",
+				StopCmd:        "",
+				Restart:        false,
+				ServiceRunPath: "",
+				stopChannel:    make(chan bool),
 			}
 			if err := yaml.Unmarshal(bytes, &service); err != nil {
 				log.Printf("Could not read service file at %s!", path.Join(serviceConfigDir, "services", entry.Name()))
@@ -235,6 +243,16 @@ func (service *EnitService) StartService() error {
 		return err
 	}
 
+	err := service.setProcessID(cmd.Process.Pid)
+	if err != nil {
+		return err
+	}
+
+	err = service.setCurrentState(EnitServiceRunning)
+	if err != nil {
+		return err
+	}
+
 	go func() {
 		err := cmd.Wait()
 		select {
@@ -245,19 +263,12 @@ func (service *EnitService) StartService() error {
 				_ = service.setCurrentState(EnitServiceCompleted)
 			}
 			_ = service.setCurrentState(EnitServiceCrashed)
+
+			if service.Restart {
+				_ = service.StartService()
+			}
 		}
-
 	}()
-
-	err := service.setProcessID(cmd.Process.Pid)
-	if err != nil {
-		return err
-	}
-
-	err = service.setCurrentState(EnitServiceRunning)
-	if err != nil {
-		return err
-	}
 
 	return nil
 }
