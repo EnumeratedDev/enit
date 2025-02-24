@@ -100,30 +100,36 @@ func stopServiceManager() {
 	if err != nil {
 		log.Println("Could not stop service manager!")
 	}
+
 	// Check if service manager has stopped gracefully, otherwise send sigkill on timeout
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-	timer := time.NewTimer(5 * time.Second)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		log.Println("Could not stop service manager!")
-		err := syscall.Kill(serviceManagerPid, syscall.SIGKILL)
-		if err != nil {
+	exit := false
+	for timeout := time.After(60 * time.Second); ; {
+		if exit {
+			break
+		}
+		select {
+		case <-timeout:
 			log.Println("Could not stop service manager!")
-		}
-	case <-ticker.C:
-		p, err := os.FindProcess(serviceManagerPid)
-		if err != nil {
-			break
-		}
-		err = p.Signal(syscall.Signal(0))
-		if err != nil {
-			break
+			err := syscall.Kill(serviceManagerPid, syscall.SIGKILL)
+			if err != nil {
+				log.Println("Could not stop service manager!")
+			}
+			exit = true
+		default:
+			waitZombieProcesses()
+			p, err := os.FindProcess(serviceManagerPid)
+			if err != nil {
+				exit = true
+				break
+			}
+			err = p.Signal(syscall.Signal(0))
+			if err != nil {
+				exit = true
+			}
 		}
 	}
 
-	fmt.Print("Done.")
+	fmt.Println("Done.")
 }
 
 func waitZombieProcesses() {
