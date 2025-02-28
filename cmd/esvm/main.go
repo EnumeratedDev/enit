@@ -37,6 +37,7 @@ type EnitService struct {
 	StopCmd        string `yaml:"stop_cmd,omitempty"`
 	Restart        bool   `yaml:"restart,omitempty"`
 	ServiceRunPath string
+	restartCount   int
 	stopChannel    chan bool
 }
 
@@ -142,6 +143,7 @@ func Init() {
 				StopCmd:        "",
 				Restart:        false,
 				ServiceRunPath: "",
+				restartCount:   0,
 				stopChannel:    make(chan bool),
 			}
 			if err := yaml.Unmarshal(bytes, &service); err != nil {
@@ -281,15 +283,18 @@ func (service *EnitService) StartService() error {
 		err := cmd.Wait()
 		select {
 		case <-service.stopChannel:
+			service.restartCount = 0
 			_ = service.setCurrentState(EnitServiceStopped)
 		default:
 			if service.Type == "simple" && err == nil {
+				service.restartCount = 0
 				_ = service.setCurrentState(EnitServiceCompleted)
 			}
 			logger.Printf("Service (%s) has crashed!\n", service.Name)
 			_ = service.setCurrentState(EnitServiceCrashed)
 
-			if service.Restart {
+			if service.Restart && service.restartCount < 5 {
+				service.restartCount++
 				_ = service.StartService()
 			}
 		}
