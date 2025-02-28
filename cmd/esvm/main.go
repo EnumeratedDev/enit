@@ -289,6 +289,7 @@ func (service *EnitService) StartService() error {
 			if service.Type == "simple" && err == nil {
 				service.restartCount = 0
 				_ = service.setCurrentState(EnitServiceCompleted)
+				return
 			}
 			logger.Printf("Service (%s) has crashed!\n", service.Name)
 			_ = service.setCurrentState(EnitServiceCrashed)
