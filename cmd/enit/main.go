@@ -55,10 +55,43 @@ func main() {
 func mountVirtualFilesystems() {
 	fmt.Print("Mounting virtual filesystems... ")
 
+	commonFlags := uintptr(0 | syscall.MS_NOSUID | syscall.MS_RELATIME)
+	// Mount /proc
+	if err := syscall.Mount("proc", "/proc", "proc", commonFlags|syscall.MS_NODEV|syscall.MS_NOEXEC|syscall.MS_REMOUNT, ""); err != nil {
+		panic(err)
+	}
+	// Mount /sys
+	if err := syscall.Mount("sys", "/sys", "sysfs", commonFlags|syscall.MS_NODEV|syscall.MS_NOEXEC|syscall.MS_REMOUNT, ""); err != nil {
+		panic(err)
+	}
+	// Mount /dev
+	if err := syscall.Mount("dev", "/dev", "devtmpfs", commonFlags|syscall.MS_REMOUNT, "mode=755,inode64"); err != nil {
+		panic(err)
+	}
+	// Mount /run
+	if err := syscall.Mount("run", "/run", "tmpfs", commonFlags|syscall.MS_NODEV|syscall.MS_REMOUNT, "mode=755,inode64"); err != nil {
+		panic(err)
+	}
+	// Mount /dev/pts
 	if err := os.Mkdir("/dev/pts", 0755); err != nil {
 		panic(err)
 	}
-	if err := syscall.Mount("none", "/dev/pts", "devpts", syscall.MS_NOSUID|syscall.MS_NOEXEC, ""); err != nil {
+	if err := syscall.Mount("devpts", "/dev/pts", "devpts", commonFlags, "gid=5,mode=620,ptmxmode=000"); err != nil {
+		panic(err)
+	}
+	// Mount /dev/shm
+	if err := os.Mkdir("/dev/shm", 0755); err != nil {
+		panic(err)
+	}
+	if err := syscall.Mount("shm", "/dev/shm", "tmpfs", commonFlags|syscall.MS_NODEV, "inode64"); err != nil {
+		panic(err)
+	}
+	// Mount securityfs
+	if err := syscall.Mount("securityfs", "/sys/kernel/security", "securityfs", commonFlags, ""); err != nil {
+		panic(err)
+	}
+	// Mount cgroups v2
+	if err := syscall.Mount("cgroup2", "/sys/fs/cgroup", "cgroup2", commonFlags|syscall.MS_NOEXEC, ""); err != nil {
 		panic(err)
 	}
 
