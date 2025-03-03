@@ -29,13 +29,14 @@ const (
 )
 
 type EnitService struct {
-	Name           string `yaml:"name"`
-	Description    string `yaml:"description,omitempty"`
-	Type           string `yaml:"type"`
-	StartCmd       string `yaml:"start_cmd"`
-	ExitMethod     string `yaml:"exit_method"`
-	StopCmd        string `yaml:"stop_cmd,omitempty"`
-	Restart        bool   `yaml:"restart,omitempty"`
+	Name           string   `yaml:"name"`
+	Description    string   `yaml:"description,omitempty"`
+	Dependencies   []string `yaml:"dependencies,omitempty"`
+	Type           string   `yaml:"type"`
+	StartCmd       string   `yaml:"start_cmd"`
+	ExitMethod     string   `yaml:"exit_method"`
+	StopCmd        string   `yaml:"stop_cmd,omitempty"`
+	Restart        bool     `yaml:"restart,omitempty"`
 	ServiceRunPath string
 	restartCount   int
 	stopChannel    chan bool
@@ -125,6 +126,7 @@ func Init() {
 		logger.Fatalf("Could not initialize ESVM! Error: %s", err)
 	}
 
+	// Read and initialize service files
 	for _, entry := range dirEntries {
 		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".esv") {
 			logger.Printf("Initializing service (%s)...\n", entry.Name())
@@ -137,6 +139,7 @@ func Init() {
 			service := EnitService{
 				Name:           "",
 				Description:    "",
+				Dependencies:   make([]string, 0),
 				Type:           "",
 				StartCmd:       "",
 				ExitMethod:     "",
@@ -178,11 +181,46 @@ func Init() {
 
 			Services = append(Services, service)
 
-			if err := service.StartService(); err != nil {
-				logger.Printf("Could not start service %s: %s\n", service.Name, err)
-			}
-
 			logger.Printf("Service (%s) has been initialized!\n", service.Name)
+		}
+	}
+
+	// Get services that meet their dependencies
+	servicesWithMetDepends := make([]EnitService, 0)
+	for _, service := range Services {
+		if len(service.GetUnmetDependencies()) == 0 {
+			servicesWithMetDepends = append(servicesWithMetDepends, service)
+		}
+	}
+
+	// Loop until all services have started or timed out
+	for start := time.Now(); time.Since(start) < 60*time.Second; {
+		if len(servicesWithMetDepends) == 0 {
+			break
+		}
+
+		for i := len(servicesWithMetDepends) - 1; i >= 0; i-- {
+			service := servicesWithMetDepends[i]
+			canStart := true
+			for _, dependency := range service.Dependencies {
+				if GetServiceByName(dependency).GetCurrentState() != EnitServiceRunning && GetServiceByName(dependency).GetCurrentState() != EnitServiceCompleted {
+					canStart = false
+					break
+				}
+			}
+			if canStart {
+				err := service.StartService()
+				if err != nil {
+					logger.Printf("Could not start service (%s)! Error: %s", service.Name, err)
+				}
+				servicesWithMetDepends = append(servicesWithMetDepends[:i], servicesWithMetDepends[i+1:]...)
+			}
+		}
+	}
+
+	if len(servicesWithMetDepends) > 0 {
+		for _, service := range servicesWithMetDepends {
+			logger.Printf("Could not start service (%s)! Error: dependencies not met", service.Name)
 		}
 	}
 
@@ -206,6 +244,17 @@ func GetServiceByName(name string) *EnitService {
 		}
 	}
 	return nil
+}
+
+func (service *EnitService) GetUnmetDependencies() (missingDependencies []string) {
+	for _, dependency := range service.Dependencies {
+		depService := GetServiceByName(dependency)
+		if depService == nil {
+			missingDependencies = append(missingDependencies, dependency)
+		}
+	}
+
+	return missingDependencies
 }
 
 func (service *EnitService) GetProcess() *os.Process {
