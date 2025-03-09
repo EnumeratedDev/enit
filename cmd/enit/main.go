@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -41,6 +42,8 @@ func main() {
 	mountVirtualFilesystems()
 	// Mount filesystems in fstab
 	mountFilesystems()
+	// Set hostname
+	setHostname()
 	// Start service manager
 	startServiceManager()
 
@@ -163,6 +166,25 @@ func stopServiceManager() {
 				exit = true
 			}
 		}
+	}
+
+	fmt.Println("Done.")
+}
+
+func setHostname() {
+	fmt.Print("Setting hostname... ")
+
+	bytes, err := os.ReadFile("/etc/hostname")
+	if err != nil {
+		log.Println("Could not set hostname!")
+		return
+	}
+
+	hostname := strings.TrimSpace(string(bytes))
+
+	if err := syscall.Sethostname([]byte(hostname)); err != nil {
+		log.Println("Could not set hostname!")
+		return
 	}
 
 	fmt.Println("Done.")
