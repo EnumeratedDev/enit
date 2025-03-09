@@ -117,6 +117,8 @@ func startServiceManager() {
 	fmt.Print("Initializing service manager... ")
 
 	cmd := exec.Command("/sbin/esvm", path.Join(runstatedir, "esvm"), path.Join(sysconfdir, "esvm"))
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
 	err := cmd.Start()
 	if err != nil {
 		log.Println("Could not initialize service manager!")
