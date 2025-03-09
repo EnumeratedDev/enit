@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -73,14 +74,14 @@ func mountVirtualFilesystems() {
 		panic(err)
 	}
 	// Mount /dev/pts
-	if err := os.Mkdir("/dev/pts", 0755); err != nil {
+	if err := os.Mkdir("/dev/pts", 0755); err != nil && !errors.Is(err, os.ErrExist) {
 		panic(err)
 	}
 	if err := syscall.Mount("devpts", "/dev/pts", "devpts", commonFlags, "gid=5,mode=620,ptmxmode=000"); err != nil {
 		panic(err)
 	}
 	// Mount /dev/shm
-	if err := os.Mkdir("/dev/shm", 0755); err != nil {
+	if err := os.Mkdir("/dev/shm", 0755); err != nil && !errors.Is(err, os.ErrExist) {
 		panic(err)
 	}
 	if err := syscall.Mount("shm", "/dev/shm", "tmpfs", commonFlags|syscall.MS_NODEV, "inode64"); err != nil {
