@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -49,6 +50,7 @@ var runtimeServiceDir string
 var serviceConfigDir string
 
 var Services = make([]EnitService, 0)
+var EnabledServices = make([]string, 0)
 
 var logger *log.Logger
 var socket net.Listener
@@ -154,6 +156,12 @@ func Init() {
 				continue
 			}
 
+			for _, sv := range Services {
+				if sv.Name == service.Name {
+					logger.Printf("Service with name (%s) has already been initialized!", service.Name)
+				}
+			}
+
 			switch service.Type {
 			case "simple", "background":
 			default:
@@ -185,15 +193,28 @@ func Init() {
 		}
 	}
 
-	// Get services that meet their dependencies
+	// Get enabled services
+	if _, err := os.Stat(path.Join(serviceConfigDir, "enabled_services")); err == nil {
+		file, err := os.ReadFile(path.Join(serviceConfigDir, "enabled_services"))
+		if err != nil {
+			return
+		}
+		for _, line := range strings.Split(string(file), "\n") {
+			if line != "" {
+				EnabledServices = append(EnabledServices, line)
+			}
+		}
+	}
+
+	// Get enabled services that meet their dependencies
 	servicesWithMetDepends := make([]EnitService, 0)
 	for _, service := range Services {
-		if len(service.GetUnmetDependencies()) == 0 {
+		if slices.Contains(EnabledServices, service.Name) && len(service.GetUnmetDependencies()) == 0 {
 			servicesWithMetDepends = append(servicesWithMetDepends, service)
 		}
 	}
 
-	// Loop until all services have started or timed out
+	// Loop until all enabled services have started or timed out
 	for start := time.Now(); time.Since(start) < 60*time.Second; {
 		if len(servicesWithMetDepends) == 0 {
 			break
