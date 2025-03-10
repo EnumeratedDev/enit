@@ -31,7 +31,7 @@ install: build/enit build/ectl
 	mkdir -p $(DESTDIR)$(SBINDIR)
 	mkdir -p $(DESTDIR)$(SYSCONFDIR)/esvm/services
 	cp build/enit $(DESTDIR)$(SBINDIR)/enit
-	cp build/enit $(DESTDIR)$(SBINDIR)/esvm
+	cp build/esvm $(DESTDIR)$(SBINDIR)/esvm
 	cp build/ectl $(DESTDIR)$(SBINDIR)/ectl
 
 install-services:
