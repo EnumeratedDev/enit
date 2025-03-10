@@ -75,7 +75,7 @@ func main() {
 	}
 
 	if os.Getppid() != 1 {
-		fmt.Println("Enit must be run by PID 1!")
+		fmt.Println("Esvm must be run by PID 1!")
 		os.Exit(1)
 	}
 
