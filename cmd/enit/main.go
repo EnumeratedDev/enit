@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
 // Build-time variables
@@ -22,6 +23,12 @@ var runstatedir = "/var/run/"
 var serviceManagerPid int
 
 func main() {
+	// Set Process Name
+	err := setProcessName()
+	if err != nil {
+		log.Printf("Could not set process name! Error: %s", err)
+	}
+
 	// Parse flags
 	printVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
@@ -54,6 +61,15 @@ func main() {
 
 	// Catch signals
 	catchSignals()
+}
+
+func setProcessName() error {
+	bytes := append([]byte("enit"), 0)
+	ptr := unsafe.Pointer(&bytes[0])
+	if _, _, errno := syscall.RawSyscall6(syscall.SYS_PRCTL, syscall.PR_SET_NAME, uintptr(ptr), 0, 0, 0, 0); errno != 0 {
+		return errno
+	}
+	return nil
 }
 
 func mountVirtualFilesystems() {
