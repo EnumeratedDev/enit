@@ -30,17 +30,18 @@ const (
 )
 
 type EnitService struct {
-	Name           string   `yaml:"name"`
-	Description    string   `yaml:"description,omitempty"`
-	Dependencies   []string `yaml:"dependencies,omitempty"`
-	Type           string   `yaml:"type"`
-	StartCmd       string   `yaml:"start_cmd"`
-	ExitMethod     string   `yaml:"exit_method"`
-	StopCmd        string   `yaml:"stop_cmd,omitempty"`
-	Restart        string   `yaml:"restart,omitempty"`
-	ServiceRunPath string
-	restartCount   int
-	stopChannel    chan bool
+	Name            string   `yaml:"name"`
+	Description     string   `yaml:"description,omitempty"`
+	Dependencies    []string `yaml:"dependencies,omitempty"`
+	Type            string   `yaml:"type"`
+	StartCmd        string   `yaml:"start_cmd"`
+	ExitMethod      string   `yaml:"exit_method"`
+	CrashOnSafeExit bool     `yaml:"crash_on_safe_exit"`
+	StopCmd         string   `yaml:"stop_cmd,omitempty"`
+	Restart         string   `yaml:"restart,omitempty"`
+	ServiceRunPath  string
+	restartCount    int
+	stopChannel     chan bool
 }
 
 // Build-time variables
@@ -139,17 +140,18 @@ func Init() {
 			}
 
 			service := EnitService{
-				Name:           "",
-				Description:    "",
-				Dependencies:   make([]string, 0),
-				Type:           "",
-				StartCmd:       "",
-				ExitMethod:     "",
-				StopCmd:        "",
-				Restart:        "",
-				ServiceRunPath: "",
-				restartCount:   0,
-				stopChannel:    make(chan bool),
+				Name:            "",
+				Description:     "",
+				Dependencies:    make([]string, 0),
+				Type:            "",
+				StartCmd:        "",
+				ExitMethod:      "",
+				StopCmd:         "",
+				Restart:         "",
+				CrashOnSafeExit: true,
+				ServiceRunPath:  "",
+				restartCount:    0,
+				stopChannel:     make(chan bool),
 			}
 			if err := yaml.Unmarshal(bytes, &service); err != nil {
 				logger.Printf("Could not read service file at %s!\n", path.Join(serviceConfigDir, "services", entry.Name()))
@@ -367,8 +369,13 @@ func (service *EnitService) StartService() error {
 				_ = service.setCurrentState(EnitServiceCompleted)
 				return
 			}
-			logger.Printf("Service (%s) has crashed!\n", service.Name)
-			_ = service.setCurrentState(EnitServiceCrashed)
+			if !service.CrashOnSafeExit {
+				logger.Printf("Service (%s) has exited\n", service.Name)
+				_ = service.setCurrentState(EnitServiceStopped)
+			} else {
+				logger.Printf("Service (%s) has crashed!\n", service.Name)
+				_ = service.setCurrentState(EnitServiceCrashed)
+			}
 
 			if service.Restart == "always" {
 				_ = service.StartService()
