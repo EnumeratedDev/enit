@@ -65,8 +65,7 @@ func main() {
 			fmt.Printf("Usage: ectl service %s <service>\n", flag.Args()[1])
 			return
 		} else if flag.Args()[1] == "start" {
-			flag.Args()[2] = strings.TrimSuffix(flag.Args()[2], ".esv")
-			if _, err := os.Stat(path.Join(sysconfdir, "esvm/services/", flag.Args()[2]+".esv")); err != nil {
+			if _, err := os.Stat(path.Join(runstatedir, "esvm", flag.Args()[2])); err != nil {
 				log.Fatalf("Could not start service! Error: %s\n", err)
 			}
 
@@ -87,8 +86,7 @@ func main() {
 			fmt.Println("Service started successfully!")
 			return
 		} else if flag.Args()[1] == "stop" {
-			flag.Args()[2] = strings.TrimSuffix(flag.Args()[2], ".esv")
-			if _, err := os.Stat(path.Join(sysconfdir, "esvm/services/", flag.Args()[2]+".esv")); err != nil {
+			if _, err := os.Stat(path.Join(runstatedir, "esvm", flag.Args()[2])); err != nil {
 				log.Fatalf("Could not stop service! Error: %s\n", err)
 			}
 
@@ -108,9 +106,8 @@ func main() {
 			fmt.Println("Service stopped successfully!")
 			return
 		} else if flag.Args()[1] == "restart" || flag.Args()[1] == "reload" {
-			flag.Args()[2] = strings.TrimSuffix(flag.Args()[2], ".esv")
-			if _, err := os.Stat(path.Join(sysconfdir, "esvm/services/", flag.Args()[2]+".esv")); err != nil {
-				log.Fatalf("Could not stop service! Error: %s\n", err)
+			if _, err := os.Stat(path.Join(runstatedir, "esvm", flag.Args()[2])); err != nil {
+				log.Fatalf("Could not restart service! Error: %s\n", err)
 			}
 
 			_, err := socket.Write([]byte("restart " + flag.Args()[2]))
@@ -225,9 +222,8 @@ func main() {
 			fmt.Printf("Service (%s) has been disabled!\n", flag.Args()[2])
 			return
 		} else if flag.Args()[1] == "status" {
-			flag.Args()[2] = strings.TrimSuffix(flag.Args()[2], ".esv")
-			if _, err := os.Stat(path.Join(sysconfdir, "esvm/services/", flag.Args()[2]+".esv")); err != nil {
-				log.Fatalf("Could not stop service! Error: %s\n", err)
+			if _, err := os.Stat(path.Join(runstatedir, "esvm", flag.Args()[2])); err != nil {
+				log.Fatalf("Could not get service status! Error: %s\n", err)
 			}
 
 			var state uint64
