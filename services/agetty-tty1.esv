@@ -1,5 +1,7 @@
 name: agetty-tty1
 description: Start virtual terminal on tty1
 type: background
-start_cmd: /sbin/agetty --noclear tty1
+start_cmd: /usr/bin/setsid /sbin/agetty --noclear tty1
 exit_method: kill
+crash_on_safe_exit: false
+restart: always
