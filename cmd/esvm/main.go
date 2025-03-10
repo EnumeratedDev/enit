@@ -37,7 +37,7 @@ type EnitService struct {
 	StartCmd       string   `yaml:"start_cmd"`
 	ExitMethod     string   `yaml:"exit_method"`
 	StopCmd        string   `yaml:"stop_cmd,omitempty"`
-	Restart        bool     `yaml:"restart,omitempty"`
+	Restart        string   `yaml:"restart,omitempty"`
 	ServiceRunPath string
 	restartCount   int
 	stopChannel    chan bool
@@ -146,7 +146,7 @@ func Init() {
 				StartCmd:       "",
 				ExitMethod:     "",
 				StopCmd:        "",
-				Restart:        false,
+				Restart:        "",
 				ServiceRunPath: "",
 				restartCount:   0,
 				stopChannel:    make(chan bool),
@@ -174,6 +174,12 @@ func Init() {
 			default:
 				logger.Printf("Unknown exit method: %s\n", service.ExitMethod)
 				continue
+			}
+
+			switch service.Restart {
+			case "true", "always":
+			default:
+				service.Restart = "false"
 			}
 
 			service.ServiceRunPath = path.Join(runtimeServiceDir, service.Name)
@@ -364,7 +370,9 @@ func (service *EnitService) StartService() error {
 			logger.Printf("Service (%s) has crashed!\n", service.Name)
 			_ = service.setCurrentState(EnitServiceCrashed)
 
-			if service.Restart && service.restartCount < 5 {
+			if service.Restart == "always" {
+				_ = service.StartService()
+			} else if service.Restart == "true" && service.restartCount < 5 {
 				service.restartCount++
 				_ = service.StartService()
 			}
