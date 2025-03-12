@@ -226,32 +226,66 @@ func main() {
 				log.Fatalf("Could not get service status! Error: %s\n", err)
 			}
 
-			var state uint64
-			bytes, err := os.ReadFile(path.Join(runstatedir, "esvm", flag.Args()[2], "state"))
-			if err != nil {
-				state = 0
-			}
-			state, err = strconv.ParseUint(string(bytes), 10, 8)
+			state := getServiceState(flag.Args()[2])
+			enabled := strconv.FormatBool(isServiceEnabled(flag.Args()[2]))
+			enabled = strings.ToUpper(enabled[:1]) + strings.ToLower(enabled[1:])
 
 			fmt.Println("Service name: " + flag.Args()[2])
-			switch state {
-			case 0:
-				fmt.Println("Service state: Unknown")
-			case 1:
-				fmt.Println("Service state: Unloaded")
-			case 2:
-				fmt.Println("Service state: Running")
-			case 3:
-				fmt.Println("Service state: Stopped")
-			case 4:
-				fmt.Println("Service state: Crashed")
-			}
+			fmt.Printf("    State: %s\n", state)
+			fmt.Printf("    Enabled: %s\n", enabled)
 			return
 		}
 	}
 
 	printUsage()
 	os.Exit(1)
+}
+
+func getServiceState(serviceName string) string {
+	if _, err := os.Stat(path.Join(runstatedir, "esvm", serviceName)); err != nil {
+		return ""
+	}
+
+	var state uint64
+	bytes, err := os.ReadFile(path.Join(runstatedir, "esvm", serviceName, "state"))
+	if err != nil {
+		state = 0
+	}
+	state, err = strconv.ParseUint(string(bytes), 10, 8)
+
+	switch state {
+	case 1:
+		return "Unloaded"
+	case 2:
+		return "Running"
+	case 3:
+		return "Stopped"
+	case 4:
+		return "Crashed"
+	case 5:
+		return "Completed"
+	default:
+		return "Unknown"
+	}
+}
+
+func isServiceEnabled(serviceName string) bool {
+	if _, err := os.Stat(path.Join(sysconfdir, "esvm/enabled_services")); err != nil {
+		return false
+	}
+
+	file, err := os.ReadFile(path.Join(sysconfdir, "esvm/enabled_services"))
+	if err != nil {
+		return false
+	}
+
+	for _, line := range strings.Split(string(file), "\n") {
+		if strings.TrimSpace(line) == serviceName {
+			return true
+		}
+	}
+
+	return false
 }
 
 func printUsage() {
