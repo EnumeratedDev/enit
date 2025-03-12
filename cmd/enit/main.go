@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -75,43 +74,45 @@ func setProcessName() error {
 func mountVirtualFilesystems() {
 	fmt.Print("Mounting virtual filesystems... ")
 
-	commonFlags := uintptr(0 | syscall.MS_NOSUID | syscall.MS_RELATIME)
+	commonOptions := "rw,nosuid,relatime"
+
 	// Mount /proc
-	if err := syscall.Mount("proc", "/proc", "proc", commonFlags|syscall.MS_NODEV|syscall.MS_NOEXEC|syscall.MS_REMOUNT, ""); err != nil {
+	if err := mount("proc", "/proc", "proc", commonOptions+",nodev,noexec", false); err != nil {
 		panic(err)
 	}
+
 	// Mount /sys
-	if err := syscall.Mount("sys", "/sys", "sysfs", commonFlags|syscall.MS_NODEV|syscall.MS_NOEXEC|syscall.MS_REMOUNT, ""); err != nil {
+	if err := mount("sys", "/sys", "sysfs", commonOptions+",nodev,noexec", false); err != nil {
 		panic(err)
 	}
+
 	// Mount /dev
-	if err := syscall.Mount("dev", "/dev", "devtmpfs", commonFlags|syscall.MS_REMOUNT, "mode=755,inode64"); err != nil {
+	if err := mount("dev", "/dev", "devtmpfs", commonOptions+",mode=755,inode64", false); err != nil {
 		panic(err)
 	}
+
 	// Mount /run
-	if err := syscall.Mount("run", "/run", "tmpfs", commonFlags|syscall.MS_NODEV|syscall.MS_REMOUNT, "mode=755,inode64"); err != nil {
+	if err := mount("run", "/run", "tmpfs", commonOptions+",nodev,mode=755,inode64", false); err != nil {
 		panic(err)
 	}
+
 	// Mount /dev/pts
-	if err := os.Mkdir("/dev/pts", 0755); err != nil && !errors.Is(err, os.ErrExist) {
+	if err := mount("devpts", "/dev/pts", "devpts", commonOptions+",gid=5,mode=620,ptmxmode=000", true); err != nil {
 		panic(err)
 	}
-	if err := syscall.Mount("devpts", "/dev/pts", "devpts", commonFlags, "gid=5,mode=620,ptmxmode=000"); err != nil {
-		panic(err)
-	}
+
 	// Mount /dev/shm
-	if err := os.Mkdir("/dev/shm", 0755); err != nil && !errors.Is(err, os.ErrExist) {
+	if err := mount("shm", "/dev/shm", "tmpfs", commonOptions+",nodev,inode64", true); err != nil {
 		panic(err)
 	}
-	if err := syscall.Mount("shm", "/dev/shm", "tmpfs", commonFlags|syscall.MS_NODEV, "inode64"); err != nil {
-		panic(err)
-	}
+
 	// Mount securityfs
-	if err := syscall.Mount("securityfs", "/sys/kernel/security", "securityfs", commonFlags, ""); err != nil {
+	if err := mount("securityfs", "/sys/kernel/security", "securityfs", commonOptions, false); err != nil {
 		panic(err)
 	}
+
 	// Mount cgroups v2
-	if err := syscall.Mount("cgroup2", "/sys/fs/cgroup", "cgroup2", commonFlags|syscall.MS_NOEXEC, ""); err != nil {
+	if err := mount("cgroup2", "/sys/fs/cgroup", "cgroup2", commonOptions+",noexec,nsdelegate,memory_recursiveprot", false); err != nil {
 		panic(err)
 	}
 
@@ -119,12 +120,9 @@ func mountVirtualFilesystems() {
 }
 
 func mountFilesystems() {
-	fmt.Print("Mounting filesystems... ")
+	fmt.Print("Mounting fstab entries... ")
 
-	cmd := exec.Command("/bin/mount", "-a")
-	err := cmd.Run()
-
-	if err != nil {
+	if err := mountFstabEntries(); err != nil {
 		log.Println("Could not mount fstab entries!")
 		panic(err)
 	}
