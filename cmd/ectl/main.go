@@ -59,7 +59,28 @@ func main() {
 			fmt.Println("Usage: ectl service <start/stop/enable/disable/status/list> [service]")
 			return
 		} else if flag.Args()[1] == "list" {
-			fmt.Println("list")
+			if _, err := os.Stat(path.Join(runstatedir, "esvm")); err != nil {
+				log.Fatalf("Could not list services! Error: %s\n", err)
+			}
+
+			entries, err := os.ReadDir(path.Join(runstatedir, "esvm"))
+			if err != nil {
+				log.Fatalf("Could not list services! Error: %s\n", err)
+			}
+
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+
+				state := getServiceState(entry.Name())
+				enabled := strconv.FormatBool(isServiceEnabled(entry.Name()))
+				enabled = strings.ToUpper(enabled[:1]) + strings.ToLower(enabled[1:])
+
+				fmt.Println("Service name: " + entry.Name())
+				fmt.Printf("    State: %s\n", state)
+				fmt.Printf("    Enabled: %s\n", enabled)
+			}
 			return
 		} else if len(flag.Args()) <= 2 {
 			fmt.Printf("Usage: ectl service %s <service>\n", flag.Args()[1])
