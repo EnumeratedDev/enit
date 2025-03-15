@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"golang.org/x/sys/unix"
 	"os"
 	"slices"
 	"strings"
+	"unsafe"
 )
 
 var flagsEquivalence = map[string]uintptr{
@@ -111,6 +113,8 @@ func mountFstabEntries() error {
 		return err
 	}
 
+	swapPriority := -2
+
 	for _, line := range strings.Split(string(bytes), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "#") || line == "" {
@@ -125,6 +129,18 @@ func mountFstabEntries() error {
 		flags, data := convertMountOptions(options)
 
 		if slices.Contains(strings.Split(data, ","), "noauto") {
+			continue
+		}
+
+		if fstype == "swap" {
+			b := append([]byte(source), 0)
+			const SwapFlagPrioShift = 0
+			const SwapFlagPrioMask = 0x7fff
+			_, _, err := unix.Syscall(unix.SYS_SWAPON, uintptr(unsafe.Pointer(&b[0])), uintptr((swapPriority<<SwapFlagPrioShift)&SwapFlagPrioMask), 0)
+			swapPriority--
+			if err != 0 {
+				return fmt.Errorf("swapon syscall returned none-zero error code: %d", err)
+			}
 			continue
 		}
 
