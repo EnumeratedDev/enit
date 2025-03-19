@@ -248,9 +248,18 @@ func Init() {
 			service := servicesWithMetDepends[i]
 			canStart := true
 			for _, dependency := range service.Dependencies {
-				if GetServiceByName(dependency).GetCurrentState() != EnitServiceRunning && GetServiceByName(dependency).GetCurrentState() != EnitServiceCompleted {
-					canStart = false
-					break
+				if strings.HasPrefix(dependency, "/") {
+					// File dependency
+					if _, err := os.Stat(dependency); err != nil {
+						canStart = false
+						break
+					}
+				} else {
+					// Service dependency
+					if GetServiceByName(dependency).GetCurrentState() != EnitServiceRunning && GetServiceByName(dependency).GetCurrentState() != EnitServiceCompleted {
+						canStart = false
+						break
+					}
 				}
 			}
 			if canStart {
@@ -293,9 +302,17 @@ func GetServiceByName(name string) *EnitService {
 
 func (service *EnitService) GetUnmetDependencies() (missingDependencies []string) {
 	for _, dependency := range service.Dependencies {
-		depService := GetServiceByName(dependency)
-		if depService == nil {
-			missingDependencies = append(missingDependencies, dependency)
+		if strings.HasPrefix(dependency, "/") {
+			// File dependency
+			if _, err := os.Stat(dependency); err != nil {
+				missingDependencies = append(missingDependencies, dependency)
+			}
+		} else {
+			// Service dependency
+			depService := GetServiceByName(dependency)
+			if depService == nil {
+				missingDependencies = append(missingDependencies, dependency)
+			}
 		}
 	}
 
