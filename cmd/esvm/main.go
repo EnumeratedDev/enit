@@ -39,6 +39,7 @@ type EnitService struct {
 	CrashOnSafeExit bool     `yaml:"crash_on_safe_exit"`
 	StopCmd         string   `yaml:"stop_cmd,omitempty"`
 	Restart         string   `yaml:"restart,omitempty"`
+	LogOutput       bool     `yaml:"log_output,omitempty"`
 	ServiceRunPath  string
 	restartCount    int
 	stopChannel     chan bool
@@ -57,13 +58,12 @@ var logger *log.Logger
 var socket net.Listener
 
 func main() {
-	loggerFile, err := os.OpenFile("/var/log/esvm.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	// Setup main logger
+	err := setupESVMLogger()
 	if err != nil {
-		log.Fatalf("Error opening /var/log/esvm/esvm.log: %v", err)
+		log.Printf("Could not setup main ESVM logger! Error: %s\n", err)
+		logger = log.Default()
 	}
-	logger = log.New(loggerFile, "[ESVM] ", log.Lshortfile|log.LstdFlags)
-	// Print an empty line as separator
-	logger.Println()
 
 	// Parse flags
 	printVersion := flag.Bool("version", false, "print version and exit")
@@ -93,13 +93,28 @@ func main() {
 	go func() {
 		<-sigc
 		Destroy()
-		loggerFile.Close()
 		os.Exit(0)
 	}()
 
 	for {
 		listenToSocket()
 	}
+}
+
+func setupESVMLogger() error {
+	err := os.MkdirAll("/var/log/esvm", 0755)
+	if err != nil {
+		return err
+	}
+	loggerFile, err := os.OpenFile("/var/log/esvm/esvm.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return err
+	}
+	logger = log.New(loggerFile, "[ESVM] ", log.Lshortfile|log.LstdFlags)
+	// Print an empty line as separator
+	_, err = loggerFile.WriteString("------ " + time.Now().Format(time.UnixDate) + " ------\n")
+
+	return nil
 }
 
 func Init() {
@@ -152,6 +167,7 @@ func Init() {
 				ServiceRunPath:  "",
 				restartCount:    0,
 				stopChannel:     make(chan bool),
+				LogOutput:       true,
 			}
 			if err := yaml.Unmarshal(bytes, &service); err != nil {
 				logger.Printf("Could not read service file at %s!\n", path.Join(serviceConfigDir, "services", entry.Name()))
@@ -332,6 +348,26 @@ func (service *EnitService) setCurrentState(state EnitServiceState) error {
 	return nil
 }
 
+func (service *EnitService) GetLogFile() (file *os.File, err error) {
+	err = os.MkdirAll(path.Join("/var/log/esvm/"), 0755)
+	if err != nil {
+		return nil, err
+	}
+
+	file, err = os.OpenFile(path.Join("/var/log/esvm/", service.Name+".log"), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = file.WriteString("------ " + time.Now().Format(time.UnixDate) + " ------\n")
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+
+	return file, nil
+}
+
 func (service *EnitService) StartService() error {
 	if service == nil {
 		return nil
@@ -342,23 +378,58 @@ func (service *EnitService) StartService() error {
 
 	logger.Printf("Starting service (%s)...\n", service.Name)
 
+	// Get log file if service logs output
+	var logFile *os.File
+	if service.LogOutput {
+		var err error
+		logFile, err = service.GetLogFile()
+		if err != nil {
+			return err
+		}
+	}
+
 	cmd := exec.Command("/bin/sh", "-c", "exec "+service.StartCmd)
+	if logFile != nil {
+		cmd.Stdout = logFile
+		cmd.Stderr = logFile
+	}
 	if err := cmd.Start(); err != nil {
+		// Close log file if not nil
+		if logFile != nil {
+			logFile.Close()
+		}
+
 		return err
 	}
 
 	err := service.setProcessID(cmd.Process.Pid)
 	if err != nil {
+		// Close log file if not nil
+		if logFile != nil {
+			logFile.Close()
+		}
+
 		return err
 	}
 
 	err = service.setCurrentState(EnitServiceRunning)
 	if err != nil {
+		// Close log file if not nil
+		if logFile != nil {
+			logFile.Close()
+		}
+
 		return err
 	}
 
 	go func() {
 		err := cmd.Wait()
+
+		// Close log file if not nil
+		if logFile != nil {
+			logFile.Close()
+		}
+
 		select {
 		case <-service.stopChannel:
 			service.restartCount = 0
