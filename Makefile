@@ -23,9 +23,9 @@ endif
 
 build:
 	mkdir -p build
-	cd cmd/enit; $(GO) build -ldflags "-w -X main.version=$(VERSION)" -o ../../build/enit enit
-	cd cmd/esvm; $(GO) build -ldflags "-w -X main.version=$(VERSION)" -o ../../build/esvm esvm
-	cd cmd/ectl; $(GO) build -ldflags "-w -X main.version=$(VERSION) -X main.sysconfdir=$(SYSCONFDIR) -X main.runstatedir=$(RUNSTATEDIR)" -o ../../build/ectl ectl
+	cd src/enit; $(GO) build -ldflags "-w -X main.version=$(VERSION)" -o ../../build/enit enit
+	cd src/esvm; $(GO) build -ldflags "-w -X main.version=$(VERSION)" -o ../../build/esvm esvm
+	cd src/ectl; $(GO) build -ldflags "-w -X main.version=$(VERSION) -X main.sysconfdir=$(SYSCONFDIR) -X main.runstatedir=$(RUNSTATEDIR)" -o ../../build/ectl ectl
 
 install: build/enit build/ectl
 	mkdir -p $(DESTDIR)$(SBINDIR)
