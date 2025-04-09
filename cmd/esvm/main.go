@@ -58,13 +58,6 @@ var logger *log.Logger
 var socket net.Listener
 
 func main() {
-	// Setup main logger
-	err := setupESVMLogger()
-	if err != nil {
-		log.Printf("Could not setup main ESVM logger! Error: %s\n", err)
-		logger = log.Default()
-	}
-
 	// Parse flags
 	printVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
@@ -77,6 +70,13 @@ func main() {
 	if os.Getppid() != 1 {
 		fmt.Println("Esvm must be run by PID 1!")
 		os.Exit(1)
+	}
+
+	// Setup main logger
+	err := setupESVMLogger()
+	if err != nil {
+		log.Printf("Could not setup main ESVM logger! Error: %s\n", err)
+		logger = log.Default()
 	}
 
 	// Set directory variables
