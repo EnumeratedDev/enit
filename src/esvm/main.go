@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"io"
 	"log"
 	"net"
@@ -16,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type EnitServiceState uint8
@@ -102,16 +103,31 @@ func main() {
 }
 
 func setupESVMLogger() error {
+	// Create esvm log directory
 	err := os.MkdirAll("/var/log/esvm", 0755)
 	if err != nil {
 		return err
 	}
+
+	// Create esvm old log directory
+	err = os.MkdirAll("/var/log/esvm/old", 0755)
+	if err != nil {
+		return err
+	}
+
+	// Move old log file
+	if _, err := os.Stat("/var/log/esvm/esvm.log"); err == nil {
+		os.Rename("/var/log/esvm/esvm.log", "/var/log/esvm/old/esvm.log")
+	}
+
+	// Open new log file
 	loggerFile, err := os.OpenFile("/var/log/esvm/esvm.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
 		return err
 	}
+
+	// Initialize logger and print a header line
 	logger = log.New(loggerFile, "[ESVM] ", log.Lshortfile|log.LstdFlags)
-	// Print an empty line as separator
 	_, err = loggerFile.WriteString("------ " + time.Now().Format(time.UnixDate) + " ------\n")
 
 	return nil
@@ -366,16 +382,30 @@ func (service *EnitService) setCurrentState(state EnitServiceState) error {
 }
 
 func (service *EnitService) GetLogFile() (file *os.File, err error) {
-	err = os.MkdirAll(path.Join("/var/log/esvm/"), 0755)
+	// Create esvm log directory
+	err = os.MkdirAll("/var/log/esvm", 0755)
 	if err != nil {
 		return nil, err
 	}
 
-	file, err = os.OpenFile(path.Join("/var/log/esvm/", service.Name+".log"), os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0644)
+	// Create esvm old log directory
+	err = os.MkdirAll("/var/log/esvm/old", 0755)
 	if err != nil {
 		return nil, err
 	}
 
+	// Move old log file
+	if _, err := os.Stat(path.Join("/var/log/esvm/", service.Name+".log")); err == nil {
+		os.Rename(path.Join("/var/log/esvm/", service.Name+".log"), path.Join("/var/log/esvm/old", service.Name+".log"))
+	}
+
+	// Open new log file
+	file, err = os.OpenFile(path.Join("/var/log/esvm/", service.Name+".log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return nil, err
+	}
+
+	// Initialize logger and print a header line
 	_, err = file.WriteString("------ " + time.Now().Format(time.UnixDate) + " ------\n")
 	if err != nil {
 		file.Close()
