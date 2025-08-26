@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"golang.org/x/sys/unix"
 	"os"
 	"slices"
 	"strings"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 var flagsEquivalence = map[string]uintptr{
@@ -104,7 +105,9 @@ func mount(source, target, fstype string, options string, mkdir bool) error {
 }
 
 func mountFstabEntries() error {
-	if _, err := os.Stat("/etc/fstab"); err != nil {
+	if _, err := os.Stat("/etc/fstab"); os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return err
 	}
 
