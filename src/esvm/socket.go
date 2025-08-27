@@ -20,6 +20,8 @@ func initSocket() (socket net.Listener, err error) {
 	commandHandlers["start"] = handleStartServiceCommand
 	commandHandlers["stop"] = handleStopServiceCommand
 	commandHandlers["restart"] = handleRestartServiceCommand
+	commandHandlers["enable"] = handleEnableServiceCommand
+	commandHandlers["disable"] = handleDisableServiceCommand
 
 	return socket, nil
 }
@@ -141,6 +143,68 @@ func handleRestartServiceCommand(conn net.Conn, jsonData map[string]any) {
 	}
 
 	conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) has restarted sucessfully", serviceName.(string))))
+}
+
+func handleEnableServiceCommand(conn net.Conn, jsonData map[string]any) {
+	// Get service name from json data
+	serviceName, ok := jsonData["service"]
+	if !ok {
+		conn.Write(wrapErrorInJson(fmt.Errorf("'service' field missing")))
+		return
+	}
+
+	// Ensure service exists
+	service := GetServiceByName(serviceName.(string))
+	if service == nil {
+		conn.Write(wrapErrorInJson(fmt.Errorf("Service (%s) not found", serviceName.(string))))
+		return
+	}
+
+	// Check if service is already enabled
+	if service.isEnabled() {
+		conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) is already enabled", serviceName.(string))))
+		return
+	}
+
+	// Enable service
+	err := service.SetEnabled(true)
+	if err != nil {
+		conn.Write(wrapErrorInJson(fmt.Errorf("Could not enable service! Error: %s", err)))
+		return
+	}
+
+	conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) was enabled sucessfully", serviceName.(string))))
+}
+
+func handleDisableServiceCommand(conn net.Conn, jsonData map[string]any) {
+	// Get service name from json data
+	serviceName, ok := jsonData["service"]
+	if !ok {
+		conn.Write(wrapErrorInJson(fmt.Errorf("'service' field missing")))
+		return
+	}
+
+	// Ensure service exists
+	service := GetServiceByName(serviceName.(string))
+	if service == nil {
+		conn.Write(wrapErrorInJson(fmt.Errorf("Service (%s) not found", serviceName.(string))))
+		return
+	}
+
+	// Check if service is already disabled
+	if !service.isEnabled() {
+		conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) is already disabled", serviceName.(string))))
+		return
+	}
+
+	// Disable service
+	err := service.SetEnabled(false)
+	if err != nil {
+		conn.Write(wrapErrorInJson(fmt.Errorf("Could not disable service! Error: %s", err)))
+		return
+	}
+
+	conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) was disabled sucessfully", serviceName.(string))))
 }
 
 func wrapErrorInJson(err error) []byte {

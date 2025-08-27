@@ -13,8 +13,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Build-time variables
@@ -88,7 +86,7 @@ func main() {
 		} else if len(flag.Args()) <= 2 {
 			fmt.Printf("Usage: ectl service %s <service>\n", flag.Args()[1])
 			return
-		} else if flag.Arg(1) == "start" || flag.Arg(1) == "stop" || flag.Arg(1) == "restart" {
+		} else if flag.Arg(1) == "start" || flag.Arg(1) == "stop" || flag.Arg(1) == "restart" || flag.Arg(1) == "enable" || flag.Arg(1) == "disable" {
 			type ServiceCommandJsonStruct struct {
 				Command string `json:"command"`
 				Service string `json:"service"`
@@ -136,102 +134,6 @@ func main() {
 				log.Fatal("Connection returned empty string!")
 			}
 
-			return
-		} else if flag.Args()[1] == "enable" {
-			// Check if service exists
-			found := false
-			entries, err := os.ReadDir(path.Join(sysconfdir, "esvm/services/"))
-			if err != nil {
-				log.Fatalf("Could not enable service! Error: %s\n", err)
-			}
-			type minimalServiceStruct struct {
-				Name string `yaml:"name"`
-			}
-			for _, entry := range entries {
-				if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".esv") {
-					continue
-				}
-
-				bytes, err := os.ReadFile(path.Join(sysconfdir, "esvm/services", entry.Name()))
-				if err != nil {
-					log.Fatalf("Could not enable service! Error: %s\n", err)
-				}
-
-				sv := minimalServiceStruct{Name: ""}
-				err = yaml.Unmarshal(bytes, &sv)
-				if err != nil {
-					log.Fatalf("Could not enable service! Error: %s\n", err)
-				}
-
-				if sv.Name == flag.Args()[2] {
-					found = true
-					break
-				}
-			}
-			if !found {
-				log.Fatalf("Service does not exist!")
-			}
-
-			if _, err := os.Stat(path.Join(sysconfdir, "esvm/enabled_services")); err != nil {
-				err := os.WriteFile(path.Join(sysconfdir, "esvm/enabled_services"), []byte(flag.Args()[2]+"\n"), 0644)
-				if err != nil {
-					log.Fatalf("Could not enable service! Error: %s\n", err)
-				}
-				return
-			}
-
-			file, err := os.ReadFile(path.Join(sysconfdir, "esvm/enabled_services"))
-			if err != nil {
-				log.Fatalf("Could not enable service! Error: %s\n", err)
-			}
-			for _, line := range strings.Split(string(file), "\n") {
-				if strings.TrimSpace(line) == flag.Args()[2] {
-					fmt.Println("Service is already enabled!")
-					return
-				}
-			}
-
-			err = os.WriteFile(path.Join(sysconfdir, "esvm/enabled_services"), []byte(string(file)+flag.Args()[2]+"\n"), 0644)
-			if err != nil {
-				log.Fatalf("Could not enable service! Error: %s\n", err)
-			}
-
-			fmt.Printf("Service (%s) has been enabled!\n", flag.Args()[2])
-			return
-		} else if flag.Args()[1] == "disable" {
-			if _, err := os.Stat(path.Join(sysconfdir, "esvm/enabled_services")); err != nil {
-				fmt.Println("Service is already disabled!")
-				return
-			}
-
-			file, err := os.ReadFile(path.Join(sysconfdir, "esvm/enabled_services"))
-			if err != nil {
-				log.Fatalf("Could not disable service! Error: %s\n", err)
-			}
-
-			lines := strings.Split(string(file), "\n")
-			found := false
-			for i := len(lines) - 1; i >= 0; i-- {
-				line := strings.TrimSpace(lines[i])
-				if strings.TrimSpace(line) == flag.Args()[2] {
-					lines = append(lines[:i], lines[i+1:]...)
-					found = true
-				} else if strings.TrimSpace(line) == "" {
-					lines = append(lines[:i], lines[i+1:]...)
-				}
-			}
-
-			if !found {
-				fmt.Println("Service is already disabled!")
-				return
-			}
-
-			err = os.WriteFile(path.Join(sysconfdir, "esvm/enabled_services"), []byte(strings.Join(lines, "\n")+"\n"), 0644)
-			if err != nil {
-				log.Fatalf("Could not disable service! Error: %s\n", err)
-			}
-
-			fmt.Printf("Service (%s) has been disabled!\n", flag.Args()[2])
 			return
 		} else if flag.Args()[1] == "status" {
 			if _, err := os.Stat(path.Join(runstatedir, "esvm", flag.Args()[2])); err != nil {
