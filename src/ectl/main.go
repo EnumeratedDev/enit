@@ -1,9 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
-	"gopkg.in/yaml.v3"
+	"io"
 	"log"
 	"net"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Build-time variables
@@ -19,7 +22,7 @@ var version = "dev"
 var sysconfdir = "/etc/"
 var runstatedir = "/var/run/"
 
-var socket net.Conn
+var conn net.Conn
 
 func main() {
 
@@ -29,7 +32,7 @@ func main() {
 
 	// Dial esvm socket
 	dialSocket()
-	defer socket.Close()
+	defer conn.Close()
 
 	if flag.NArg() < 1 {
 		printUsage()
@@ -85,66 +88,54 @@ func main() {
 		} else if len(flag.Args()) <= 2 {
 			fmt.Printf("Usage: ectl service %s <service>\n", flag.Args()[1])
 			return
-		} else if flag.Args()[1] == "start" {
-			if _, err := os.Stat(path.Join(runstatedir, "esvm", flag.Args()[2])); err != nil {
-				log.Fatalf("Could not start service! Error: %s\n", err)
+		} else if flag.Arg(1) == "start" || flag.Arg(1) == "stop" || flag.Arg(1) == "restart" {
+			type ServiceCommandJsonStruct struct {
+				Command string `json:"command"`
+				Service string `json:"service"`
+			}
+			serviceCommandJson := ServiceCommandJsonStruct{
+				Command: flag.Arg(1),
+				Service: flag.Arg(2),
 			}
 
-			_, err := socket.Write([]byte("start " + flag.Args()[2]))
+			// Encode struct to json string
+			jsonData, err := json.Marshal(serviceCommandJson)
 			if err != nil {
-				log.Fatalf("Could not start service! Error: %s\n", err)
+				log.Fatalf("Could not encode JSON data! Error: %s\n", err)
 			}
 
-			buf := make([]byte, 1024)
-			n, err := socket.Read(buf)
+			_, err = conn.Write(jsonData)
 			if err != nil {
-				log.Fatalf("Could not start service! Error: %s\n", err)
-			}
-			if string(buf[:n]) != "ok" {
-				log.Fatalf("Could not start service! Error: expcted 'ok' got '%s'\n", string(buf))
+				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
 			}
 
-			fmt.Println("Service started successfully!")
-			return
-		} else if flag.Args()[1] == "stop" {
-			if _, err := os.Stat(path.Join(runstatedir, "esvm", flag.Args()[2])); err != nil {
-				log.Fatalf("Could not stop service! Error: %s\n", err)
-			}
+			// Create a buffer for incoming data.
+			buf := make([]byte, 4096)
 
-			_, err := socket.Write([]byte("stop " + flag.Args()[2]))
+			// Read data from the connection.
+			n, err := conn.Read(buf)
+			if err == io.EOF {
+				return
+			}
 			if err != nil {
-				log.Fatalf("Could not stop service! Error: %s\n", err)
+				return
 			}
 
-			buf := make([]byte, 1024)
-			n, err := socket.Read(buf)
+			// Decoode JSON data
+			var returnedJsonData map[string]any
+			err = json.Unmarshal(buf[:n], &returnedJsonData)
 			if err != nil {
-				log.Fatalf("Could not stop service! Error: %s\n", err)
-			}
-			if string(buf[:n]) != "ok" {
-				log.Fatalf("Could not stop service! Error: expcted 'ok' got '%s'\n", string(buf))
-			}
-			fmt.Println("Service stopped successfully!")
-			return
-		} else if flag.Args()[1] == "restart" || flag.Args()[1] == "reload" {
-			if _, err := os.Stat(path.Join(runstatedir, "esvm", flag.Args()[2])); err != nil {
-				log.Fatalf("Could not restart service! Error: %s\n", err)
+				log.Fatalf("Could not decode JSON data from connection!")
 			}
 
-			_, err := socket.Write([]byte("restart " + flag.Args()[2]))
-			if err != nil {
-				log.Fatalf("Could not restart service! Error: %s\n", err)
+			if err, ok := returnedJsonData["error"]; ok {
+				log.Fatal(err)
+			} else if msg, ok := returnedJsonData["success"]; ok {
+				fmt.Println(msg)
+			} else {
+				log.Fatal("Connection returned empty string!")
 			}
 
-			buf := make([]byte, 1024)
-			n, err := socket.Read(buf)
-			if err != nil {
-				log.Fatalf("Could not restart service! Error: %s\n", err)
-			}
-			if string(buf[:n]) != "ok" {
-				log.Fatalf("Could not restart service! Error: expcted 'ok' got '%s'\n", string(buf))
-			}
-			fmt.Println("Service restarted successfully!")
 			return
 		} else if flag.Args()[1] == "enable" {
 			// Check if service exists
@@ -329,12 +320,12 @@ func dialSocket() {
 	}
 
 	var err error
-	socket, err = net.Dial("unix", path.Join(runstatedir, "esvm/esvm.sock"))
+	conn, err = net.Dial("unix", path.Join(runstatedir, "esvm/esvm.sock"))
 	if err != nil {
 		log.Fatalf("Failed to connect to esvm.sock! Error: %s\n", err)
 	}
 
-	if err := socket.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		log.Fatalf("Failed to set write deadline! Error: %s\n", err)
 	}
 }

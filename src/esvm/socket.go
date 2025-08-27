@@ -1,17 +1,25 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"net"
 	"path"
-	"strings"
 )
+
+var commandHandlers = make(map[string]func(conn net.Conn, jsonData map[string]any))
 
 func initSocket() (socket net.Listener, err error) {
 	socket, err = net.Listen("unix", path.Join(runtimeServiceDir, "esvm.sock"))
 	if err != nil {
 		return nil, err
 	}
+
+	// Register command handlers
+	commandHandlers["start"] = handleStartServiceCommand
+	commandHandlers["stop"] = handleStopServiceCommand
+	commandHandlers["restart"] = handleRestartServiceCommand
 
 	return socket, nil
 }
@@ -35,68 +43,136 @@ func listenToSocket() {
 			return
 		}
 		if err != nil {
-			logger.Fatal(err)
+			return
 		}
 
-		command := string(buf[:n])
-		commandSplit := strings.Split(command, " ")
-
-		if len(commandSplit) >= 2 {
-			if commandSplit[0] == "start" {
-				service := GetServiceByName(commandSplit[1])
-				if service == nil {
-					_, err := conn.Write([]byte("service not found"))
-					if err != nil {
-						return
-					}
-				}
-				if err := service.StartService(); err != nil {
-					_, err := conn.Write([]byte("could not start service"))
-					if err != nil {
-						return
-					}
-				}
-				_, err := conn.Write([]byte("ok"))
-				if err != nil {
-					return
-				}
-			} else if commandSplit[0] == "stop" {
-				service := GetServiceByName(commandSplit[1])
-				if service == nil {
-					_, err := conn.Write([]byte("service not found"))
-					if err != nil {
-						return
-					}
-				}
-				if err := service.StopService(); err != nil {
-					_, err := conn.Write([]byte("could not stop service"))
-					if err != nil {
-						return
-					}
-				}
-				_, err := conn.Write([]byte("ok"))
-				if err != nil {
-					return
-				}
-			} else if commandSplit[0] == "restart" {
-				service := GetServiceByName(commandSplit[1])
-				if service == nil {
-					_, err := conn.Write([]byte("service not found"))
-					if err != nil {
-						return
-					}
-				}
-				if err := service.RestartService(); err != nil {
-					_, err := conn.Write([]byte("could not restart service"))
-					if err != nil {
-						return
-					}
-				}
-				_, err := conn.Write([]byte("ok"))
-				if err != nil {
-					return
-				}
-			}
+		// Decoode JSON data
+		var jsonData map[string]any
+		err = json.Unmarshal(buf[:n], &jsonData)
+		if err != nil {
+			conn.Write(wrapErrorInJson(fmt.Errorf("Invalid JSON")))
+			return
 		}
+
+		// Get command to execute
+		command, ok := jsonData["command"]
+		if !ok {
+			conn.Write(wrapErrorInJson(fmt.Errorf("'command' field missing")))
+			return
+		}
+
+		// Get command handler
+		commandHandler, ok := commandHandlers[command.(string)]
+		if !ok {
+			conn.Write(wrapErrorInJson(fmt.Errorf("command (%s) has not been implemented", command.(string))))
+			return
+		}
+		commandHandler(conn, jsonData)
 	}(conn)
+}
+
+func handleStartServiceCommand(conn net.Conn, jsonData map[string]any) {
+	// Get service name from json data
+	serviceName, ok := jsonData["service"]
+	if !ok {
+		conn.Write(wrapErrorInJson(fmt.Errorf("'service' field missing")))
+		return
+	}
+
+	// Ensure service exists
+	service := GetServiceByName(serviceName.(string))
+	if service == nil {
+		conn.Write(wrapErrorInJson(fmt.Errorf("Service (%s) not found", serviceName.(string))))
+		return
+	}
+
+	// Start the service
+	if err := service.StartService(); err != nil {
+		conn.Write(wrapErrorInJson(fmt.Errorf("Service (%s) could not be started", serviceName.(string))))
+		return
+	}
+
+	conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) has started sucessfully", serviceName.(string))))
+}
+
+func handleStopServiceCommand(conn net.Conn, jsonData map[string]any) {
+	// Get service name from json data
+	serviceName, ok := jsonData["service"]
+	if !ok {
+		conn.Write(wrapErrorInJson(fmt.Errorf("'service' field missing")))
+		return
+	}
+
+	// Ensure service exists
+	service := GetServiceByName(serviceName.(string))
+	if service == nil {
+		conn.Write(wrapErrorInJson(fmt.Errorf("Service (%s) not found", serviceName.(string))))
+		return
+	}
+
+	// Stop the service
+	if err := service.StopService(); err != nil {
+		conn.Write(wrapErrorInJson(fmt.Errorf("Service (%s) could not be stopped", serviceName.(string))))
+		return
+	}
+
+	conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) has stopped sucessfully", serviceName.(string))))
+}
+
+func handleRestartServiceCommand(conn net.Conn, jsonData map[string]any) {
+	// Get service name from json data
+	serviceName, ok := jsonData["service"]
+	if !ok {
+		conn.Write(wrapErrorInJson(fmt.Errorf("'service' field missing")))
+		return
+	}
+
+	// Ensure service exists
+	service := GetServiceByName(serviceName.(string))
+	if service == nil {
+		conn.Write(wrapErrorInJson(fmt.Errorf("Service (%s) not found", serviceName.(string))))
+		return
+	}
+
+	// Restart the service
+	if err := service.RestartService(); err != nil {
+		conn.Write(wrapErrorInJson(fmt.Errorf("Service (%s) could not be restarted", serviceName.(string))))
+		return
+	}
+
+	conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) has restarted sucessfully", serviceName.(string))))
+}
+
+func wrapErrorInJson(err error) []byte {
+	// Wrap error in struct
+	type jsonErrorStruct struct {
+		Error string `json:"error"`
+	}
+	jsonError := jsonErrorStruct{
+		Error: err.Error(),
+	}
+
+	// Encode struct to json string
+	jsonData, _err := json.Marshal(jsonError)
+	if _err != nil {
+		return nil
+	}
+	return jsonData
+}
+
+func wrapSuccessMsgInJson(msg string) []byte {
+	// Wrap message in struct
+	type jsonSuccessStruct struct {
+		Success string `json:"success"`
+	}
+	jsonSuccess := jsonSuccessStruct{
+		Success: msg,
+	}
+
+	// Encode struct to json string
+	jsonData, _err := json.Marshal(jsonSuccess)
+	if _err != nil {
+		return nil
+	}
+	return jsonData
 }
