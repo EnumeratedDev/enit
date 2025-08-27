@@ -9,8 +9,6 @@ import (
 	"net"
 	"os"
 	"path"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 )
@@ -60,28 +58,7 @@ func main() {
 			fmt.Println("Usage: ectl service <start/stop/enable/disable/status/list> [service]")
 			return
 		} else if flag.Args()[1] == "list" {
-			if _, err := os.Stat(path.Join(runstatedir, "esvm")); err != nil {
-				log.Fatalf("Could not list services! Error: %s\n", err)
-			}
-
-			entries, err := os.ReadDir(path.Join(runstatedir, "esvm"))
-			if err != nil {
-				log.Fatalf("Could not list services! Error: %s\n", err)
-			}
-
-			for _, entry := range entries {
-				if !entry.IsDir() {
-					continue
-				}
-
-				state := getServiceState(entry.Name())
-				enabled := strconv.FormatBool(isServiceEnabled(entry.Name()))
-				enabled = strings.ToUpper(enabled[:1]) + strings.ToLower(enabled[1:])
-
-				fmt.Println("Service name: " + entry.Name())
-				fmt.Printf("    State: %s\n", state)
-				fmt.Printf("    Enabled: %s\n", enabled)
-			}
+			fmt.Println("To be impemented")
 			return
 		} else if len(flag.Args()) <= 2 {
 			fmt.Printf("Usage: ectl service %s <service>\n", flag.Args()[1])
@@ -136,70 +113,62 @@ func main() {
 
 			return
 		} else if flag.Args()[1] == "status" {
-			if _, err := os.Stat(path.Join(runstatedir, "esvm", flag.Args()[2])); err != nil {
-				log.Fatalf("Could not get service status! Error: %s\n", err)
+			type ServiceCommandJsonStruct struct {
+				Command string `json:"command"`
+				Service string `json:"service"`
+			}
+			serviceCommandJson := ServiceCommandJsonStruct{
+				Command: flag.Arg(1),
+				Service: flag.Arg(2),
 			}
 
-			state := getServiceState(flag.Args()[2])
-			enabled := strconv.FormatBool(isServiceEnabled(flag.Args()[2]))
-			enabled = strings.ToUpper(enabled[:1]) + strings.ToLower(enabled[1:])
+			// Encode struct to json string
+			jsonData, err := json.Marshal(serviceCommandJson)
+			if err != nil {
+				log.Fatalf("Could not encode JSON data! Error: %s\n", err)
+			}
 
-			fmt.Println("Service name: " + flag.Args()[2])
-			fmt.Printf("    State: %s\n", state)
-			fmt.Printf("    Enabled: %s\n", enabled)
+			_, err = conn.Write(jsonData)
+			if err != nil {
+				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
+			}
+
+			// Create a buffer for incoming data.
+			buf := make([]byte, 4096)
+
+			// Read data from the connection.
+			n, err := conn.Read(buf)
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				return
+			}
+
+			// Decoode JSON data
+			var returnedJsonData map[string]any
+			err = json.Unmarshal(buf[:n], &returnedJsonData)
+			if err != nil {
+				log.Fatalf("Could not decode JSON data from connection!")
+			}
+
+			if err, ok := returnedJsonData["error"]; ok {
+				log.Fatal(err)
+			}
+
+			serviceState := returnedJsonData["state"].(string)
+			serviceEnabled := returnedJsonData["is_enabled"].(bool)
+
+			fmt.Printf("Name: %s\n", flag.Arg(2))
+			fmt.Printf("State: %s\n", serviceState)
+			fmt.Printf("Enabled: %t\n", serviceEnabled)
+
 			return
 		}
 	}
 
 	printUsage()
 	os.Exit(1)
-}
-
-func getServiceState(serviceName string) string {
-	if _, err := os.Stat(path.Join(runstatedir, "esvm", serviceName)); err != nil {
-		return ""
-	}
-
-	var state uint64
-	bytes, err := os.ReadFile(path.Join(runstatedir, "esvm", serviceName, "state"))
-	if err != nil {
-		state = 0
-	}
-	state, err = strconv.ParseUint(string(bytes), 10, 8)
-
-	switch state {
-	case 1:
-		return "Unloaded"
-	case 2:
-		return "Running"
-	case 3:
-		return "Stopped"
-	case 4:
-		return "Crashed"
-	case 5:
-		return "Completed"
-	default:
-		return "Unknown"
-	}
-}
-
-func isServiceEnabled(serviceName string) bool {
-	if _, err := os.Stat(path.Join(sysconfdir, "esvm/enabled_services")); err != nil {
-		return false
-	}
-
-	file, err := os.ReadFile(path.Join(sysconfdir, "esvm/enabled_services"))
-	if err != nil {
-		return false
-	}
-
-	for _, line := range strings.Split(string(file), "\n") {
-		if strings.TrimSpace(line) == serviceName {
-			return true
-		}
-	}
-
-	return false
 }
 
 func printUsage() {

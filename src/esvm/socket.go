@@ -22,6 +22,7 @@ func initSocket() (socket net.Listener, err error) {
 	commandHandlers["restart"] = handleRestartServiceCommand
 	commandHandlers["enable"] = handleEnableServiceCommand
 	commandHandlers["disable"] = handleDisableServiceCommand
+	commandHandlers["status"] = handleStatusServiceCommand
 
 	return socket, nil
 }
@@ -205,6 +206,36 @@ func handleDisableServiceCommand(conn net.Conn, jsonData map[string]any) {
 	}
 
 	conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) was disabled sucessfully", serviceName.(string))))
+}
+
+func handleStatusServiceCommand(conn net.Conn, jsonData map[string]any) {
+	// Get service name from json data
+	serviceName, ok := jsonData["service"]
+	if !ok {
+		conn.Write(wrapErrorInJson(fmt.Errorf("'service' field missing")))
+		return
+	}
+
+	// Ensure service exists
+	service := GetServiceByName(serviceName.(string))
+	if service == nil {
+		conn.Write(wrapErrorInJson(fmt.Errorf("Service (%s) not found", serviceName.(string))))
+		return
+	}
+
+	statusMap := make(map[string]any)
+	statusMap["name"] = service.Name
+	statusMap["state"] = EnitServiceStateNames[service.GetCurrentState()]
+	statusMap["is_enabled"] = service.isEnabled()
+
+	// Encode map to json string
+	newJsonData, err := json.Marshal(statusMap)
+	if err != nil {
+		conn.Write(wrapErrorInJson(fmt.Errorf("Could not encode JSON data")))
+		return
+	}
+
+	conn.Write(newJsonData)
 }
 
 func wrapErrorInJson(err error) []byte {

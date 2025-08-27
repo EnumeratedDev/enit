@@ -22,6 +22,15 @@ const (
 	EnitServiceCompleted
 )
 
+var EnitServiceStateNames map[EnitServiceState]string = map[EnitServiceState]string{
+	EnitServiceUnknown:   "unknown",
+	EnitServiceUnloaded:  "unloaded",
+	EnitServiceRunning:   "running",
+	EnitServiceStopped:   "stopped",
+	EnitServiceCrashed:   "crashed",
+	EnitServiceCompleted: "completed",
+}
+
 type EnitService struct {
 	Name            string   `yaml:"name"`
 	Description     string   `yaml:"description,omitempty"`
