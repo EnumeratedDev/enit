@@ -24,6 +24,7 @@ func main() {
 
 	// Set and parse flags
 	printVersion := flag.Bool("version", false, "print version and exit")
+	printJson := flag.Bool("json", false, "print output in json format")
 	flag.Parse()
 
 	// Dial esvm socket
@@ -96,6 +97,12 @@ func main() {
 				return
 			}
 
+			// Print json data if flag is set
+			if *printJson {
+				fmt.Println(string(buf[:n]))
+				return
+			}
+
 			// Decoode JSON data
 			var returnedJsonData map[string]any
 			err = json.Unmarshal(buf[:n], &returnedJsonData)
@@ -151,6 +158,12 @@ func main() {
 				return
 			}
 
+			// Print json data if flag is set
+			if *printJson {
+				fmt.Println(string(buf[:n]))
+				return
+			}
+
 			// Decoode JSON data
 			var returnedJsonData map[string]any
 			err = json.Unmarshal(buf[:n], &returnedJsonData)
@@ -198,6 +211,12 @@ func main() {
 				return
 			}
 			if err != nil {
+				return
+			}
+			
+			// Print json data if flag is set
+			if *printJson {
+				fmt.Println(string(buf[:n]))
 				return
 			}
 
