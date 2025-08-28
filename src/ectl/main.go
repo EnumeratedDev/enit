@@ -57,13 +57,13 @@ func main() {
 		if len(flag.Args()) <= 1 {
 			fmt.Println("Usage: ectl service <start/stop/enable/disable/status/list> [service]")
 			return
-		} else if flag.Args()[1] == "list" {
-			fmt.Println("To be impemented")
-			return
-		} else if len(flag.Args()) <= 2 {
-			fmt.Printf("Usage: ectl service %s <service>\n", flag.Args()[1])
-			return
 		} else if flag.Arg(1) == "start" || flag.Arg(1) == "stop" || flag.Arg(1) == "restart" || flag.Arg(1) == "enable" || flag.Arg(1) == "disable" {
+			// Ensure service name argument has been set
+			if len(flag.Args()) <= 2 {
+				fmt.Printf("Usage: ectl service %s <service>\n", flag.Args()[1])
+				return
+			}
+
 			type ServiceCommandJsonStruct struct {
 				Command string `json:"command"`
 				Service string `json:"service"`
@@ -113,6 +113,12 @@ func main() {
 
 			return
 		} else if flag.Args()[1] == "status" {
+			// Ensure service name argument has been set
+			if len(flag.Args()) <= 2 {
+				fmt.Printf("Usage: ectl service %s <service>\n", flag.Args()[1])
+				return
+			}
+
 			type ServiceCommandJsonStruct struct {
 				Command string `json:"command"`
 				Service string `json:"service"`
@@ -162,6 +168,60 @@ func main() {
 			fmt.Printf("Name: %s\n", flag.Arg(2))
 			fmt.Printf("State: %s\n", serviceState)
 			fmt.Printf("Enabled: %t\n", serviceEnabled)
+
+			return
+		} else if flag.Arg(1) == "list" {
+			type ServiceCommandJsonStruct struct {
+				Command string `json:"command"`
+			}
+			serviceCommandJson := ServiceCommandJsonStruct{
+				Command: flag.Arg(1),
+			}
+
+			// Encode struct to json string
+			jsonData, err := json.Marshal(serviceCommandJson)
+			if err != nil {
+				log.Fatalf("Could not encode JSON data! Error: %s\n", err)
+			}
+
+			_, err = conn.Write(jsonData)
+			if err != nil {
+				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
+			}
+
+			// Create a buffer for incoming data.
+			buf := make([]byte, 4096)
+
+			// Read data from the connection.
+			n, err := conn.Read(buf)
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				return
+			}
+
+			// Decoode JSON data
+			var returnedJsonData map[string]any
+			err = json.Unmarshal(buf[:n], &returnedJsonData)
+			if err != nil {
+				log.Fatalf("Could not decode JSON data from connection!")
+			}
+
+			if err, ok := returnedJsonData["error"]; ok {
+				log.Fatal(err)
+			}
+
+			for _, serviceMap := range returnedJsonData["services"].([]any) {
+				serviceName := serviceMap.(map[string]any)["name"].(string)
+				serviceState := serviceMap.(map[string]any)["state"].(string)
+				serviceEnabled := serviceMap.(map[string]any)["is_enabled"].(bool)
+
+				fmt.Printf("Name: %s\n", serviceName)
+				fmt.Printf("State: %s\n", serviceState)
+				fmt.Printf("Enabled: %t\n", serviceEnabled)
+				fmt.Println()
+			}
 
 			return
 		}

@@ -23,6 +23,7 @@ func initSocket() (socket net.Listener, err error) {
 	commandHandlers["enable"] = handleEnableServiceCommand
 	commandHandlers["disable"] = handleDisableServiceCommand
 	commandHandlers["status"] = handleStatusServiceCommand
+	commandHandlers["list"] = handleListServicesCommand
 
 	return socket, nil
 }
@@ -230,6 +231,29 @@ func handleStatusServiceCommand(conn net.Conn, jsonData map[string]any) {
 
 	// Encode map to json string
 	newJsonData, err := json.Marshal(statusMap)
+	if err != nil {
+		conn.Write(wrapErrorInJson(fmt.Errorf("Could not encode JSON data")))
+		return
+	}
+
+	conn.Write(newJsonData)
+}
+
+func handleListServicesCommand(conn net.Conn, _ map[string]any) {
+	servicesMap := make(map[string]any)
+	servicesMap["services"] = make([]map[string]any, 0)
+
+	// Loop through each service
+	for _, service := range Services {
+		statusMap := make(map[string]any)
+		statusMap["name"] = service.Name
+		statusMap["state"] = EnitServiceStateNames[service.GetCurrentState()]
+		statusMap["is_enabled"] = service.isEnabled()
+		servicesMap["services"] = append(servicesMap["services"].([]map[string]any), statusMap)
+	}
+
+	// Encode map to json string
+	newJsonData, err := json.Marshal(servicesMap)
 	if err != nil {
 		conn.Write(wrapErrorInJson(fmt.Errorf("Could not encode JSON data")))
 		return
