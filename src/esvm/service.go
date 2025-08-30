@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -20,6 +21,15 @@ const (
 	EnitServiceCrashed
 	EnitServiceCompleted
 )
+
+var EnitServiceStateNames map[EnitServiceState]string = map[EnitServiceState]string{
+	EnitServiceUnknown:   "unknown",
+	EnitServiceUnloaded:  "unloaded",
+	EnitServiceRunning:   "running",
+	EnitServiceStopped:   "stopped",
+	EnitServiceCrashed:   "crashed",
+	EnitServiceCompleted: "completed",
+}
 
 type EnitService struct {
 	Name            string   `yaml:"name"`
@@ -305,6 +315,67 @@ func (service *EnitService) RestartService() error {
 	if err := service.StartService(); err != nil {
 		return err
 	}
+
+	return nil
+}
+
+// Functions will be rewritten at some point to allow enabling unloaded services
+
+func (service *EnitService) isEnabled() bool {
+	contents, err := os.ReadFile(path.Join(serviceConfigDir, "enabled_services"))
+	if err != nil {
+		return false
+	}
+
+	for _, line := range strings.Split(string(contents), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		if line == service.Name {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (service *EnitService) SetEnabled(isEnabled bool) error {
+	// Return if service is already in correct state
+	if service.isEnabled() == isEnabled {
+		return nil
+	}
+
+	// Create or open enabled_services file
+	file, err := os.OpenFile(path.Join(serviceConfigDir, "enabled_services"), os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Get enabled_services file contents
+	contents, err := io.ReadAll(file)
+	if err != nil {
+		return err
+	}
+
+	// Modify contents
+	strContents := string(contents)
+	if isEnabled {
+		strContents += service.Name + "\n"
+	} else {
+		strContents = strings.ReplaceAll(strContents, service.Name+"\n", "")
+	}
+
+	// Write new contents to file
+	file.Truncate(0)
+	file.Seek(0, 0)
+	_, err = file.WriteString(strContents)
+	if err != nil {
+		return err
+	}
+	file.Sync()
 
 	return nil
 }

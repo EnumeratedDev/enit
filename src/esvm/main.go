@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -23,7 +22,6 @@ var runtimeServiceDir string
 var serviceConfigDir string
 
 var Services = make([]EnitService, 0)
-var EnabledServices = make([]string, 0)
 
 var logger *log.Logger
 var socket net.Listener
@@ -203,23 +201,10 @@ func Init() {
 		}
 	}
 
-	// Get enabled services
-	if _, err := os.Stat(path.Join(serviceConfigDir, "enabled_services")); err == nil {
-		file, err := os.ReadFile(path.Join(serviceConfigDir, "enabled_services"))
-		if err != nil {
-			return
-		}
-		for _, line := range strings.Split(string(file), "\n") {
-			if line != "" {
-				EnabledServices = append(EnabledServices, line)
-			}
-		}
-	}
-
 	// Get enabled services that meet their dependencies
 	servicesWithMetDepends := make([]EnitService, 0)
 	for _, service := range Services {
-		if slices.Contains(EnabledServices, service.Name) && len(service.GetUnmetDependencies()) == 0 {
+		if service.isEnabled() && len(service.GetUnmetDependencies()) == 0 {
 			servicesWithMetDepends = append(servicesWithMetDepends, service)
 		}
 	}
