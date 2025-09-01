@@ -215,7 +215,11 @@ func (service *EnitService) StartService() error {
 		default:
 			if service.Type == "simple" && err == nil {
 				service.restartCount = 0
-				_ = service.setCurrentState(EnitServiceCompleted)
+				if service.ExitMethod != "stop_command" {
+					_ = service.setCurrentState(EnitServiceCompleted)
+				} else {
+					_ = service.setCurrentState(EnitServiceRunning)
+				}
 				return
 			}
 			if !service.CrashOnSafeExit {
