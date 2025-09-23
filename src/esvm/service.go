@@ -1,14 +1,17 @@
 package main
 
 import (
-	"io"
+	"fmt"
 	"os"
 	"os/exec"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type EnitServiceState uint8
@@ -46,6 +49,10 @@ type EnitService struct {
 	restartCount    int
 	stopChannel     chan bool
 }
+
+var Services = make([]EnitService, 0)
+var EnabledServices = make(map[int][]string)
+var startedServicesOrder = make([]string, 0)
 
 func (service *EnitService) GetUnmetDependencies() (missingDependencies []string) {
 	for _, dependency := range service.Dependencies {
@@ -211,7 +218,6 @@ func (service *EnitService) StartService() error {
 		select {
 		case <-service.stopChannel:
 			service.restartCount = 0
-			_ = service.setCurrentState(EnitServiceStopped)
 		default:
 			if service.Type == "simple" && err == nil {
 				service.restartCount = 0
@@ -239,6 +245,11 @@ func (service *EnitService) StartService() error {
 		}
 	}()
 
+	// Add to started services order slice
+	if !slices.Contains(startedServicesOrder, service.Name) {
+		startedServicesOrder = append(startedServicesOrder, service.Name)
+	}
+
 	logger.Printf("Service (%s) has started!\n", service.Name)
 
 	return nil
@@ -249,45 +260,44 @@ func (service *EnitService) StopService() error {
 		return nil
 	}
 
-	logger.Printf("Stopping service (%s)...\n", service.Name)
+	logger.Printf("Stopping service (%s)...", service.Name)
+
+	newServiceStatus := EnitServiceCrashed
+	defer service.setCurrentState(newServiceStatus)
+	defer service.setProcessID(0)
 
 	if service.ExitMethod == "kill" {
 		process := service.GetProcess()
 		if err := process.Signal(syscall.Signal(0)); err != nil {
-			logger.Printf("Service (%s) has stopped. (Process already dead)\n", service.Name)
+			newServiceStatus = EnitServiceStopped
+			logger.Printf("Service (%s) has stopped (Process already dead)", service.Name)
 			return nil
 		}
 
 		go func() { service.stopChannel <- true }()
 
-		err := service.GetProcess().Signal(syscall.SIGTERM)
-		if err != nil {
-			return err
+		// Send SIGTERM signal to process
+		if err := process.Signal(syscall.SIGTERM); err != nil {
+			process.Signal(syscall.SIGKILL)
+			return fmt.Errorf("could not stop process gracefully")
 		}
 
-		exit := false
-		for timeout := time.After(5 * time.Second); ; {
-			if exit {
-				break
-			}
-			select {
-			case <-timeout:
-				logger.Println("Process took too long to finish. Forcefully killing process...")
-				err := service.GetProcess().Kill()
-				if err != nil {
-					return err
-				}
-				exit = true
-			default:
-				if process == nil {
-					exit = true
+		// Check if the process has stopped gracefully, otherwise send sigkill on timeout
+		exited := make(chan bool)
+		go func() {
+			for {
+				if err := process.Signal(syscall.Signal(0)); err != nil {
 					break
 				}
-				err = process.Signal(syscall.Signal(0))
-				if err != nil {
-					exit = true
-				}
 			}
+			exited <- true
+		}()
+
+		select {
+		case <-exited:
+		case <-time.After(5 * time.Second):
+			process.Signal(syscall.SIGKILL)
+			return fmt.Errorf("could not stop process gracefully")
 		}
 	} else {
 		cmd := exec.Command("/bin/sh", "-c", service.StopCmd)
@@ -296,16 +306,7 @@ func (service *EnitService) StopService() error {
 		}
 	}
 
-	err := service.setCurrentState(EnitServiceStopped)
-	if err != nil {
-		return err
-	}
-
-	err = service.setProcessID(0)
-	if err != nil {
-		return err
-	}
-
+	newServiceStatus = EnitServiceStopped
 	logger.Printf("Service (%s) has stopped!\n", service.Name)
 
 	return nil
@@ -325,61 +326,73 @@ func (service *EnitService) RestartService() error {
 
 // Functions will be rewritten at some point to allow enabling unloaded services
 
-func (service *EnitService) isEnabled() bool {
-	contents, err := os.ReadFile(path.Join(serviceConfigDir, "enabled_services"))
-	if err != nil {
-		return false
-	}
-
-	for _, line := range strings.Split(string(contents), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-
-		if line == service.Name {
-			return true
+func (service *EnitService) isEnabled() (bool, int) {
+	for stage, services := range EnabledServices {
+		if slices.Contains(services, service.Name) {
+			return true, stage
 		}
 	}
 
-	return false
+	return false, 0
 }
 
-func (service *EnitService) SetEnabled(isEnabled bool) error {
+func (service *EnitService) SetEnabled(stage int) error {
+	// Get current service enabled status
+	_, s := service.isEnabled()
+
 	// Return if service is already in correct state
-	if service.isEnabled() == isEnabled {
+	if s == stage {
 		return nil
 	}
 
-	// Create or open enabled_services file
-	file, err := os.OpenFile(path.Join(serviceConfigDir, "enabled_services"), os.O_CREATE|os.O_RDWR, 0644)
+	// Remove service from current stage
+	if s != 0 {
+		EnabledServices[s] = slices.DeleteFunc(EnabledServices[s], func(name string) bool {
+			return name == service.Name
+		})
+	}
+
+	// Add service to stage
+	EnabledServices[stage] = append(EnabledServices[stage], service.Name)
+
+	// Save enabled services to file
+	data, err := yaml.Marshal(EnabledServices)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-
-	// Get enabled_services file contents
-	contents, err := io.ReadAll(file)
+	err = os.WriteFile(path.Join(serviceConfigDir, "enabled_services"), data, 0644)
 	if err != nil {
 		return err
 	}
 
-	// Modify contents
-	strContents := string(contents)
-	if isEnabled {
-		strContents += service.Name + "\n"
-	} else {
-		strContents = strings.ReplaceAll(strContents, service.Name+"\n", "")
-	}
+	return nil
+}
 
-	// Write new contents to file
-	file.Truncate(0)
-	file.Seek(0, 0)
-	_, err = file.WriteString(strContents)
+func ReadEnabledServices() error {
+	data, err := os.ReadFile(path.Join(serviceConfigDir, "enabled_services"))
 	if err != nil {
 		return err
 	}
-	file.Sync()
+
+	err = yaml.Unmarshal(data, &EnabledServices)
+	if err != nil {
+		// Assume old plain text format
+		for _, service := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+			EnabledServices[2] = append(EnabledServices[2], service)
+		}
+
+		// Update enabled_services file
+		data, err := yaml.Marshal(EnabledServices)
+		if err != nil {
+			return err
+		}
+		err = os.WriteFile(path.Join(serviceConfigDir, "enabled_services"), data, 0644)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
 
 	return nil
 }

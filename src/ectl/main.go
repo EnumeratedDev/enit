@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -58,7 +59,7 @@ func main() {
 		if len(flag.Args()) <= 1 {
 			fmt.Println("Usage: ectl service <start/stop/enable/disable/status/list> [service]")
 			return
-		} else if flag.Arg(1) == "start" || flag.Arg(1) == "stop" || flag.Arg(1) == "restart" || flag.Arg(1) == "enable" || flag.Arg(1) == "disable" {
+		} else if flag.Arg(1) == "start" || flag.Arg(1) == "stop" || flag.Arg(1) == "restart" {
 			// Ensure service name argument has been set
 			if len(flag.Args()) <= 2 {
 				fmt.Printf("Usage: ectl service %s <service>\n", flag.Args()[1])
@@ -72,6 +73,82 @@ func main() {
 			serviceCommandJson := ServiceCommandJsonStruct{
 				Command: flag.Arg(1),
 				Service: flag.Arg(2),
+			}
+
+			// Encode struct to json string
+			jsonData, err := json.Marshal(serviceCommandJson)
+			if err != nil {
+				log.Fatalf("Could not encode JSON data! Error: %s\n", err)
+			}
+
+			_, err = conn.Write(jsonData)
+			if err != nil {
+				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
+			}
+
+			// Create a buffer for incoming data.
+			buf := make([]byte, 4096)
+
+			// Read data from the connection.
+			n, err := conn.Read(buf)
+			if err == io.EOF {
+				return
+			}
+			if err != nil {
+				return
+			}
+
+			// Print json data if flag is set
+			if *printJson {
+				fmt.Println(string(buf[:n]))
+				return
+			}
+
+			// Decoode JSON data
+			var returnedJsonData map[string]any
+			err = json.Unmarshal(buf[:n], &returnedJsonData)
+			if err != nil {
+				log.Fatalf("Could not decode JSON data from connection!")
+			}
+
+			if err, ok := returnedJsonData["error"]; ok {
+				log.Fatal(err)
+			} else if msg, ok := returnedJsonData["success"]; ok {
+				fmt.Println(msg)
+			} else {
+				log.Fatal("Connection returned empty string!")
+			}
+
+			return
+		} else if flag.Arg(1) == "enable" || flag.Arg(1) == "disable" {
+			// Ensure service name argument has been set
+			if len(flag.Args()) <= 2 {
+				fmt.Printf("Usage: ectl service %s <service> [stage]\n", flag.Args()[1])
+				return
+			}
+
+			// Get service stage
+			stage := 2
+			if len(flag.Args()) > 3 {
+				flagStr := flag.Arg(3)
+				_stage, err := strconv.ParseInt(flagStr, 10, 32)
+				if err != nil {
+					log.Fatalf("Error: could not parse stage number: %s", err)
+				}
+				stage = int(_stage)
+			} else if flag.Arg(1) == "disable" {
+				stage = 0
+			}
+
+			type ServiceCommandJsonStruct struct {
+				Command string `json:"command"`
+				Service string `json:"service"`
+				Stage   int    `json:"stage"`
+			}
+			serviceCommandJson := ServiceCommandJsonStruct{
+				Command: "set_enabled",
+				Service: flag.Arg(2),
+				Stage:   stage,
 			}
 
 			// Encode struct to json string
@@ -177,10 +254,15 @@ func main() {
 
 			serviceState := returnedJsonData["state"].(string)
 			serviceEnabled := returnedJsonData["is_enabled"].(bool)
+			serviceStage := int(returnedJsonData["stage"].(float64))
 
 			fmt.Printf("Name: %s\n", flag.Arg(2))
 			fmt.Printf("State: %s\n", serviceState)
-			fmt.Printf("Enabled: %t\n", serviceEnabled)
+			if serviceEnabled {
+				fmt.Printf("Enabled: %t (Stage %d)\n", serviceEnabled, serviceStage)
+			} else {
+				fmt.Printf("Enabled: %t\n", serviceEnabled)
+			}
 
 			return
 		} else if flag.Arg(1) == "list" {
@@ -213,7 +295,7 @@ func main() {
 			if err != nil {
 				return
 			}
-			
+
 			// Print json data if flag is set
 			if *printJson {
 				fmt.Println(string(buf[:n]))
@@ -235,10 +317,15 @@ func main() {
 				serviceName := serviceMap.(map[string]any)["name"].(string)
 				serviceState := serviceMap.(map[string]any)["state"].(string)
 				serviceEnabled := serviceMap.(map[string]any)["is_enabled"].(bool)
+				serviceStage := serviceMap.(map[string]any)["stage"].(int)
 
 				fmt.Printf("Name: %s\n", serviceName)
 				fmt.Printf("State: %s\n", serviceState)
-				fmt.Printf("Enabled: %t\n", serviceEnabled)
+				if serviceEnabled {
+					fmt.Printf("Enabled: %t (Stage %d)\n", serviceEnabled, serviceStage)
+				} else {
+					fmt.Printf("Enabled: %t\n", serviceEnabled)
+				}
 				fmt.Println()
 			}
 

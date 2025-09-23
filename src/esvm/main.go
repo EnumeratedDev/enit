@@ -3,11 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"maps"
 	"net"
 	"os"
 	"os/signal"
 	"path"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -20,8 +23,6 @@ var version = "dev"
 
 var runtimeServiceDir string
 var serviceConfigDir string
-
-var Services = make([]EnitService, 0)
 
 var logger *log.Logger
 var socket net.Listener
@@ -44,7 +45,7 @@ func main() {
 	// Setup main logger
 	err := setupESVMLogger()
 	if err != nil {
-		log.Printf("Could not setup main ESVM logger! Error: %s\n", err)
+		log.Printf("Error: could not setup main ESVM logger: %s\n", err)
 		logger = log.Default()
 	}
 
@@ -94,8 +95,11 @@ func setupESVMLogger() error {
 		return err
 	}
 
+	// Setup multiwriter
+	w := io.MultiWriter(loggerFile, os.Stderr)
+
 	// Initialize logger and print a header line
-	logger = log.New(loggerFile, "[ESVM] ", log.Lshortfile|log.LstdFlags)
+	logger = log.New(w, "[ESVM] ", log.Lshortfile|log.LstdFlags)
 	_, err = loggerFile.WriteString("------ " + time.Now().Format(time.UnixDate) + " ------\n")
 
 	return nil
@@ -105,17 +109,17 @@ func Init() {
 	logger.Println("Initializing ESVM...")
 
 	if _, err := os.Stat(runtimeServiceDir); err == nil {
-		logger.Fatalf("Could not initialize ESVM! Error: %s", fmt.Errorf("runtime service directory %s already exists", runtimeServiceDir))
+		logger.Fatalf("Error: could not initialize ESVM: %s", fmt.Errorf("runtime service directory %s already exists", runtimeServiceDir))
 	}
 
 	err := os.MkdirAll(runtimeServiceDir, 0755)
 	if err != nil {
-		logger.Fatalf("Could not initialize ESVM! Error: %s", err)
+		logger.Fatalf("Error: could not initialize ESVM: %s", err)
 	}
 
 	socket, err = initSocket()
 	if err != nil {
-		logger.Fatalf("Could not initialize ESVM! Error: %s", err)
+		logger.Fatalf("Error: could not initialize ESVM: %s", err)
 	}
 
 	if stat, err := os.Stat(serviceConfigDir); err != nil || !stat.IsDir() {
@@ -125,7 +129,7 @@ func Init() {
 
 	dirEntries, err := os.ReadDir(path.Join(serviceConfigDir, "services"))
 	if err != nil {
-		logger.Fatalf("Could not initialize ESVM! Error: %s", err)
+		logger.Fatalf("Error: Could not initialize ESVM: %s", err)
 	}
 
 	// Read and initialize service files
@@ -134,7 +138,7 @@ func Init() {
 			logger.Printf("Initializing service (%s)...\n", entry.Name())
 			bytes, err := os.ReadFile(path.Join(serviceConfigDir, "services", entry.Name()))
 			if err != nil {
-				logger.Printf("Could not read service file at %s!\n", path.Join(serviceConfigDir, "services", entry.Name()))
+				logger.Printf("Error: Could not read service file (%s)", path.Join(serviceConfigDir, "services", entry.Name()))
 				continue
 			}
 
@@ -154,27 +158,27 @@ func Init() {
 				LogOutput:       true,
 			}
 			if err := yaml.Unmarshal(bytes, &service); err != nil {
-				logger.Printf("Could not read service file at %s!\n", path.Join(serviceConfigDir, "services", entry.Name()))
+				logger.Printf("Error: could not read service file %s", path.Join(serviceConfigDir, "services", entry.Name()))
 				continue
 			}
 
 			for _, sv := range Services {
 				if sv.Name == service.Name {
-					logger.Printf("Service with name (%s) has already been initialized!", service.Name)
+					logger.Printf("Error: service with name (%s) has already been initialized", service.Name)
 				}
 			}
 
 			switch service.Type {
 			case "simple", "background":
 			default:
-				logger.Printf("Unknown service type: %s\n", service.Type)
+				logger.Printf("Error: unknown service type (%s)", service.Type)
 				continue
 			}
 
 			switch service.ExitMethod {
 			case "stop_command", "kill":
 			default:
-				logger.Printf("Unknown exit method: %s\n", service.ExitMethod)
+				logger.Printf("Error: unknown exit method (%s)\n", service.ExitMethod)
 				continue
 			}
 
@@ -187,12 +191,12 @@ func Init() {
 			service.ServiceRunPath = path.Join(runtimeServiceDir, service.Name)
 			err = os.MkdirAll(path.Join(service.ServiceRunPath), 0755)
 			if err != nil {
-				logger.Fatalf("Could not initialize ESVM! Error: %s", err)
+				logger.Fatalf("Error: could not initialize ESVM: %s", err)
 			}
 
 			err = service.setCurrentState(EnitServiceUnloaded)
 			if err != nil {
-				logger.Fatalf("Could not initialize ESVM! Error: %s", err)
+				logger.Fatalf("Error: could not initialize ESVM: %s", err)
 			}
 
 			Services = append(Services, service)
@@ -201,51 +205,33 @@ func Init() {
 		}
 	}
 
-	// Get enabled services that meet their dependencies
-	servicesWithMetDepends := make([]EnitService, 0)
-	for _, service := range Services {
-		if service.isEnabled() && len(service.GetUnmetDependencies()) == 0 {
-			servicesWithMetDepends = append(servicesWithMetDepends, service)
-		}
-	}
+	// Read enabled services
+	ReadEnabledServices()
 
-	// Loop until all enabled services have started or timed out
-	for start := time.Now(); time.Since(start) < 60*time.Second; {
-		if len(servicesWithMetDepends) == 0 {
-			break
-		}
+	// Start enabled services
+	stages := slices.Collect(maps.Keys(EnabledServices))
+	slices.Sort(stages)
+	for stage := 0; stage <= stages[len(stages)-1]; stage++ {
+		logger.Printf("Starting stage %d services...", stage)
 
-		for i := len(servicesWithMetDepends) - 1; i >= 0; i-- {
-			service := servicesWithMetDepends[i]
-			canStart := true
-			for _, dependency := range service.Dependencies {
-				if strings.HasPrefix(dependency, "/") {
-					// File dependency
-					if _, err := os.Stat(dependency); err != nil {
-						canStart = false
-						break
+		services := EnabledServices[stage]
+		remainingServices := len(services)
+		for remainingServices != 0 {
+			for _, serviceName := range services {
+				service := GetServiceByName(serviceName)
+				if service == nil {
+					remainingServices--
+					continue
+				}
+
+				if len(service.GetUnmetDependencies()) == 0 {
+					err := service.StartService()
+					if err != nil {
+						logger.Printf("Error: could not start service (%s): %s", service.Name, err)
 					}
-				} else {
-					// Service dependency
-					if GetServiceByName(dependency).GetCurrentState() != EnitServiceRunning && GetServiceByName(dependency).GetCurrentState() != EnitServiceCompleted {
-						canStart = false
-						break
-					}
+					remainingServices--
 				}
 			}
-			if canStart {
-				err := service.StartService()
-				if err != nil {
-					logger.Printf("Could not start service (%s)! Error: %s", service.Name, err)
-				}
-				servicesWithMetDepends = append(servicesWithMetDepends[:i], servicesWithMetDepends[i+1:]...)
-			}
-		}
-	}
-
-	if len(servicesWithMetDepends) > 0 {
-		for _, service := range servicesWithMetDepends {
-			logger.Printf("Could not start service (%s)! Error: dependencies not met", service.Name)
 		}
 	}
 
@@ -254,11 +240,21 @@ func Init() {
 
 func Destroy() {
 	logger.Println("Stopping all ESVM services...")
-	for _, service := range Services {
+
+	// Loop through all started services in reverse
+	for i := len(startedServicesOrder) - 1; i >= 0; i-- {
+		// Get service by name
+		service := GetServiceByName(startedServicesOrder[i])
+		if service == nil {
+			continue
+		}
+
+		// Stop service
 		if err := service.StopService(); err != nil {
-			logger.Printf("Error stopping service %s! Error: %s\n", service.Name, err)
+			logger.Printf("Error: could not stop service (%s): %s", service.Name, err)
 		}
 	}
+
 	logger.Println("All ESVM services have stopped!")
 }
 
