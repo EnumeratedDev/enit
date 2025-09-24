@@ -199,7 +199,7 @@ func Init() {
 				logger.Fatalf("Error: could not initialize ESVM: %s", err)
 			}
 
-			Services = append(Services, service)
+			Services = append(Services, &service)
 
 			logger.Printf("Service (%s) has been initialized!\n", service.Name)
 		}
@@ -261,7 +261,7 @@ func Destroy() {
 func GetServiceByName(name string) *EnitService {
 	for _, service := range Services {
 		if service.Name == name {
-			return &service
+			return service
 		}
 	}
 	return nil

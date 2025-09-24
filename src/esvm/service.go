@@ -46,11 +46,12 @@ type EnitService struct {
 	Restart         string   `yaml:"restart,omitempty"`
 	LogOutput       bool     `yaml:"log_output,omitempty"`
 	ServiceRunPath  string
+	processID       int
 	restartCount    int
 	stopChannel     chan bool
 }
 
-var Services = make([]EnitService, 0)
+var Services = make([]*EnitService, 0)
 var EnabledServices = make(map[int][]string)
 var startedServicesOrder = make([]string, 0)
 
@@ -74,29 +75,9 @@ func (service *EnitService) GetUnmetDependencies() (missingDependencies []string
 }
 
 func (service *EnitService) GetProcess() *os.Process {
-	bytes, err := os.ReadFile(path.Join(service.ServiceRunPath, "process"))
-	if err != nil {
-		return nil
-	}
-
-	pid, err := strconv.Atoi(strings.TrimSpace(string(bytes)))
-	if err != nil {
-		return nil
-	}
-
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return nil
-	}
+	process, _ := os.FindProcess(service.processID)
 
 	return process
-}
-
-func (service *EnitService) setProcessID(pid int) error {
-	if err := os.WriteFile(path.Join(service.ServiceRunPath, "process"), []byte(strconv.Itoa(pid)), 0644); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (service *EnitService) GetCurrentState() EnitServiceState {
@@ -187,17 +168,9 @@ func (service *EnitService) StartService() error {
 		return err
 	}
 
-	err := service.setProcessID(cmd.Process.Pid)
-	if err != nil {
-		// Close log file if not nil
-		if logFile != nil {
-			logFile.Close()
-		}
+	service.processID = cmd.Process.Pid
 
-		return err
-	}
-
-	err = service.setCurrentState(EnitServiceRunning)
+	err := service.setCurrentState(EnitServiceRunning)
 	if err != nil {
 		// Close log file if not nil
 		if logFile != nil {
@@ -243,6 +216,8 @@ func (service *EnitService) StartService() error {
 				_ = service.StartService()
 			}
 		}
+
+		service.processID = 0
 	}()
 
 	// Add to started services order slice
@@ -263,12 +238,13 @@ func (service *EnitService) StopService() error {
 	logger.Printf("Stopping service (%s)...", service.Name)
 
 	newServiceStatus := EnitServiceCrashed
-	defer service.setCurrentState(newServiceStatus)
-	defer service.setProcessID(0)
+	defer func() {
+		service.setCurrentState(newServiceStatus)
+		service.processID = 0
+	}()
 
 	if service.ExitMethod == "kill" {
-		process := service.GetProcess()
-		if err := process.Signal(syscall.Signal(0)); err != nil {
+		if err := service.GetProcess().Signal(syscall.Signal(0)); err != nil {
 			newServiceStatus = EnitServiceStopped
 			logger.Printf("Service (%s) has stopped (Process already dead)", service.Name)
 			return nil
@@ -277,8 +253,8 @@ func (service *EnitService) StopService() error {
 		go func() { service.stopChannel <- true }()
 
 		// Send SIGTERM signal to process
-		if err := process.Signal(syscall.SIGTERM); err != nil {
-			process.Signal(syscall.SIGKILL)
+		if err := service.GetProcess().Signal(syscall.SIGTERM); err != nil {
+			service.GetProcess().Signal(syscall.SIGKILL)
 			return fmt.Errorf("could not stop process gracefully")
 		}
 
@@ -286,7 +262,7 @@ func (service *EnitService) StopService() error {
 		exited := make(chan bool)
 		go func() {
 			for {
-				if err := process.Signal(syscall.Signal(0)); err != nil {
+				if err := service.GetProcess().Signal(syscall.Signal(0)); err != nil {
 					break
 				}
 			}
@@ -296,7 +272,7 @@ func (service *EnitService) StopService() error {
 		select {
 		case <-exited:
 		case <-time.After(5 * time.Second):
-			process.Signal(syscall.SIGKILL)
+			service.GetProcess().Signal(syscall.SIGKILL)
 			return fmt.Errorf("could not stop process gracefully")
 		}
 	} else {
