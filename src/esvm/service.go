@@ -346,14 +346,17 @@ func (service *EnitService) SetEnabled(stage int) error {
 	}
 
 	// Remove service from current stage
-	if s != 0 {
-		EnabledServices[s] = slices.DeleteFunc(EnabledServices[s], func(name string) bool {
-			return name == service.Name
-		})
+	EnabledServices[s] = slices.DeleteFunc(EnabledServices[s], func(name string) bool {
+		return name == service.Name
+	})
+	if len(EnabledServices[s]) == 0 {
+		delete(EnabledServices, s)
 	}
 
 	// Add service to stage
-	EnabledServices[stage] = append(EnabledServices[stage], service.Name)
+	if stage != 0 {
+		EnabledServices[stage] = append(EnabledServices[stage], service.Name)
+	}
 
 	// Save enabled services to file
 	data, err := yaml.Marshal(EnabledServices)

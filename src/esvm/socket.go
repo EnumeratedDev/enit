@@ -197,7 +197,12 @@ func handleSetEnabledServiceCommand(conn net.Conn, jsonData map[string]any) {
 		return
 	}
 
-	conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) was enabled sucessfully", serviceName.(string))))
+	if serviceStage == 0 {
+		conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) was disabled sucessfully", serviceName.(string))))
+	} else {
+		conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) was enabled sucessfully", serviceName.(string))))
+	}
+
 }
 
 func handleStatusServiceCommand(conn net.Conn, jsonData map[string]any) {
