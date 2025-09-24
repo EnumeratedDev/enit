@@ -128,7 +128,7 @@ func main() {
 			}
 
 			// Get service stage
-			stage := 2
+			stage := 3
 			if len(flag.Args()) > 3 {
 				flagStr := flag.Arg(3)
 				_stage, err := strconv.ParseInt(flagStr, 10, 32)
