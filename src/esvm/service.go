@@ -381,7 +381,7 @@ func ReadEnabledServices() error {
 	if err != nil {
 		// Assume old plain text format
 		for _, service := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-			EnabledServices[2] = append(EnabledServices[2], service)
+			EnabledServices[3] = append(EnabledServices[3], service)
 		}
 
 		// Update enabled_services file
