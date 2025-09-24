@@ -211,7 +211,7 @@ func Init() {
 	// Start enabled services
 	stages := slices.Collect(maps.Keys(EnabledServices))
 	slices.Sort(stages)
-	for stage := 0; stage <= stages[len(stages)-1]; stage++ {
+	for stage := 1; stage <= stages[len(stages)-1]; stage++ {
 		logger.Printf("Starting stage %d services...", stage)
 
 		services := EnabledServices[stage]
