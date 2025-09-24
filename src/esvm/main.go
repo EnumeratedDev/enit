@@ -152,10 +152,10 @@ func Init() {
 				StopCmd:         "",
 				Restart:         "",
 				CrashOnSafeExit: true,
-				ServiceRunPath:  "",
 				restartCount:    0,
 				stopChannel:     make(chan bool),
 				LogOutput:       true,
+				state:           EnitServiceUnloaded,
 			}
 			if err := yaml.Unmarshal(bytes, &service); err != nil {
 				logger.Printf("Error: could not read service file %s", path.Join(serviceConfigDir, "services", entry.Name()))
@@ -186,17 +186,6 @@ func Init() {
 			case "true", "always":
 			default:
 				service.Restart = "false"
-			}
-
-			service.ServiceRunPath = path.Join(runtimeServiceDir, service.Name)
-			err = os.MkdirAll(path.Join(service.ServiceRunPath), 0755)
-			if err != nil {
-				logger.Fatalf("Error: could not initialize ESVM: %s", err)
-			}
-
-			err = service.setCurrentState(EnitServiceUnloaded)
-			if err != nil {
-				logger.Fatalf("Error: could not initialize ESVM: %s", err)
 			}
 
 			Services = append(Services, &service)

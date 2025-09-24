@@ -6,7 +6,6 @@ import (
 	"os/exec"
 	"path"
 	"slices"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -45,7 +44,7 @@ type EnitService struct {
 	StopCmd         string   `yaml:"stop_cmd,omitempty"`
 	Restart         string   `yaml:"restart,omitempty"`
 	LogOutput       bool     `yaml:"log_output,omitempty"`
-	ServiceRunPath  string
+	state           EnitServiceState
 	processID       int
 	restartCount    int
 	stopChannel     chan bool
@@ -78,26 +77,6 @@ func (service *EnitService) GetProcess() *os.Process {
 	process, _ := os.FindProcess(service.processID)
 
 	return process
-}
-
-func (service *EnitService) GetCurrentState() EnitServiceState {
-	bytes, err := os.ReadFile(path.Join(service.ServiceRunPath, "state"))
-	if err != nil {
-		return EnitServiceUnknown
-	}
-
-	state, err := strconv.Atoi(strings.TrimSpace(string(bytes)))
-	if err != nil {
-		return EnitServiceUnknown
-	}
-	return EnitServiceState(state)
-}
-
-func (service *EnitService) setCurrentState(state EnitServiceState) error {
-	if err := os.WriteFile(path.Join(service.ServiceRunPath, "state"), []byte(strconv.Itoa(int(state))), 0644); err != nil {
-		return err
-	}
-	return nil
 }
 
 func (service *EnitService) GetLogFile() (file *os.File, err error) {
@@ -138,7 +117,7 @@ func (service *EnitService) StartService() error {
 	if service == nil {
 		return nil
 	}
-	if service.GetCurrentState() == EnitServiceRunning {
+	if service.state == EnitServiceRunning {
 		return nil
 	}
 
@@ -169,16 +148,7 @@ func (service *EnitService) StartService() error {
 	}
 
 	service.processID = cmd.Process.Pid
-
-	err := service.setCurrentState(EnitServiceRunning)
-	if err != nil {
-		// Close log file if not nil
-		if logFile != nil {
-			logFile.Close()
-		}
-
-		return err
-	}
+	service.state = EnitServiceRunning
 
 	go func() {
 		err := cmd.Wait()
@@ -195,18 +165,18 @@ func (service *EnitService) StartService() error {
 			if service.Type == "simple" && err == nil {
 				service.restartCount = 0
 				if service.ExitMethod != "stop_command" {
-					_ = service.setCurrentState(EnitServiceCompleted)
+					service.state = EnitServiceCompleted
 				} else {
-					_ = service.setCurrentState(EnitServiceRunning)
+					service.state = EnitServiceRunning
 				}
 				return
 			}
 			if !service.CrashOnSafeExit {
 				logger.Printf("Service (%s) has exited\n", service.Name)
-				_ = service.setCurrentState(EnitServiceStopped)
+				service.state = EnitServiceStopped
 			} else {
 				logger.Printf("Service (%s) has crashed!\n", service.Name)
-				_ = service.setCurrentState(EnitServiceCrashed)
+				service.state = EnitServiceCrashed
 			}
 
 			if service.Restart == "always" {
@@ -231,7 +201,7 @@ func (service *EnitService) StartService() error {
 }
 
 func (service *EnitService) StopService() error {
-	if service.GetCurrentState() != EnitServiceRunning {
+	if service.state != EnitServiceRunning {
 		return nil
 	}
 
@@ -239,7 +209,7 @@ func (service *EnitService) StopService() error {
 
 	newServiceStatus := EnitServiceCrashed
 	defer func() {
-		service.setCurrentState(newServiceStatus)
+		service.state = newServiceStatus
 		service.processID = 0
 	}()
 
