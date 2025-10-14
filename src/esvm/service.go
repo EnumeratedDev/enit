@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path"
@@ -18,6 +19,7 @@ type EnitServiceState uint8
 const (
 	EnitServiceUnknown EnitServiceState = iota
 	EnitServiceUnloaded
+	EnitServiceStarting
 	EnitServiceRunning
 	EnitServiceStopped
 	EnitServiceCrashed
@@ -27,6 +29,7 @@ const (
 var EnitServiceStateNames map[EnitServiceState]string = map[EnitServiceState]string{
 	EnitServiceUnknown:   "unknown",
 	EnitServiceUnloaded:  "unloaded",
+	EnitServiceStarting:  "starting",
 	EnitServiceRunning:   "running",
 	EnitServiceStopped:   "stopped",
 	EnitServiceCrashed:   "crashed",
@@ -43,6 +46,7 @@ type EnitService struct {
 	CrashOnSafeExit bool     `yaml:"crash_on_safe_exit"`
 	StopCmd         string   `yaml:"stop_cmd,omitempty"`
 	Restart         string   `yaml:"restart,omitempty"`
+	ReadyFd         int      `yaml:"ready_fd"`
 	LogOutput       bool     `yaml:"log_output,omitempty"`
 	state           EnitServiceState
 	processID       int
@@ -113,7 +117,7 @@ func (service *EnitService) GetLogFile() (file *os.File, err error) {
 	return file, nil
 }
 
-func (service *EnitService) StartService() error {
+func (service *EnitService) StartService() (err error) {
 	if service == nil {
 		return nil
 	}
@@ -126,7 +130,6 @@ func (service *EnitService) StartService() error {
 	// Get log file if service logs output
 	var logFile *os.File
 	if service.LogOutput {
-		var err error
 		logFile, err = service.GetLogFile()
 		if err != nil {
 			return err
@@ -138,6 +141,33 @@ func (service *EnitService) StartService() error {
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
 	}
+	var pipeReader, pipeWriter *os.File
+	if service.ReadyFd > 2 {
+		pipeReader, pipeWriter, err = os.Pipe()
+		if err != nil {
+			// Close log file if not nil
+			if logFile != nil {
+				logFile.Close()
+			}
+
+			return err
+		}
+
+		err := pipeReader.SetDeadline(time.Now().Add(10 * time.Second))
+		if err != nil {
+			// Close log file if not nil
+			if logFile != nil {
+				logFile.Close()
+			}
+
+			return err
+		}
+
+		for i := 3; i < service.ReadyFd; i++ {
+			cmd.ExtraFiles = append(cmd.ExtraFiles, nil)
+		}
+		cmd.ExtraFiles = append(cmd.ExtraFiles, pipeWriter)
+	}
 	if err := cmd.Start(); err != nil {
 		// Close log file if not nil
 		if logFile != nil {
@@ -148,6 +178,28 @@ func (service *EnitService) StartService() error {
 	}
 
 	service.processID = cmd.Process.Pid
+	service.state = EnitServiceStarting
+
+	// Wait for data from pipe
+	if pipeReader != nil {
+		buffer := make([]byte, 1)
+		_, err := io.ReadAtLeast(pipeReader, buffer, 1)
+		if err != nil {
+			// Close log file if not nil
+			if logFile != nil {
+				logFile.Close()
+			}
+
+			// Kill process
+			cmd.Process.Kill()
+
+			service.processID = 0
+			service.state = EnitServiceCrashed
+
+			return err
+		}
+	}
+
 	service.state = EnitServiceRunning
 
 	go func() {
