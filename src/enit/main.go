@@ -215,16 +215,12 @@ func waitZombieProcesses() {
 func catchSignals() {
 	sigc := make(chan os.Signal, 1)
 	signal.Notify(sigc, syscall.SIGUSR1, syscall.SIGTERM, syscall.SIGINT, syscall.SIGCHLD)
-	defer close(sigc)
-	defer signal.Stop(sigc)
 	for {
 		switch <-sigc {
 		case syscall.SIGUSR1:
-			close(sigc)
 			signal.Stop(sigc)
 			shutdownSystem()
 		case syscall.SIGTERM, syscall.SIGINT:
-			close(sigc)
 			signal.Stop(sigc)
 			rebootSystem()
 		case syscall.SIGCHLD:
