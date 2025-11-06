@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -37,21 +38,24 @@ var EnitServiceStateNames map[EnitServiceState]string = map[EnitServiceState]str
 }
 
 type EnitService struct {
-	Name            string   `yaml:"name"`
-	Description     string   `yaml:"description,omitempty"`
-	Dependencies    []string `yaml:"dependencies,omitempty"`
-	Type            string   `yaml:"type"`
-	StartCmd        string   `yaml:"start_cmd"`
-	ExitMethod      string   `yaml:"exit_method"`
-	CrashOnSafeExit bool     `yaml:"crash_on_safe_exit"`
-	StopCmd         string   `yaml:"stop_cmd,omitempty"`
-	Restart         string   `yaml:"restart,omitempty"`
-	ReadyFd         int      `yaml:"ready_fd"`
-	LogOutput       bool     `yaml:"log_output,omitempty"`
-	state           EnitServiceState
-	processID       int
-	restartCount    int
-	stopChannel     chan bool
+	Name             string   `yaml:"name"`
+	Description      string   `yaml:"description,omitempty"`
+	Dependencies     []string `yaml:"dependencies,omitempty"`
+	Type             string   `yaml:"type"`
+	StartCmd         string   `yaml:"start_cmd"`
+	ExitMethod       string   `yaml:"exit_method"`
+	CrashOnSafeExit  bool     `yaml:"crash_on_safe_exit"`
+	StopCmd          string   `yaml:"stop_cmd,omitempty"`
+	Restart          string   `yaml:"restart,omitempty"`
+	ReadyFd          int      `yaml:"ready_fd"`
+	LogOutput        bool     `yaml:"log_output,omitempty"`
+	Filepath         string
+	filepathChecksum [32]byte
+	state            EnitServiceState
+	processID        int
+	restartCount     int
+	stopChannel      chan bool
+	shouldReload     bool
 }
 
 var Services = make([]*EnitService, 0)
@@ -115,6 +119,90 @@ func (service *EnitService) GetLogFile() (file *os.File, err error) {
 	}
 
 	return file, nil
+}
+
+func (service *EnitService) ReloadService() {
+	bytes, err := os.ReadFile(service.Filepath)
+	checksum := sha256.Sum256(bytes)
+	if slices.Equal(checksum[:], service.filepathChecksum[:]) {
+		return
+	}
+
+	if service.state == EnitServiceStarting || service.state == EnitServiceRunning {
+		service.shouldReload = true
+		logger.Printf("Warning: Service (%s) is currently running and will be reloaded when stopped\n", service.Name)
+		return
+	}
+	service.shouldReload = false
+
+	logger.Printf("Reloading service (%s)...\n", service.Filepath)
+
+	if os.IsNotExist(err) {
+		Services = slices.DeleteFunc(Services, func(sv *EnitService) bool {
+			return sv == service
+		})
+		logger.Printf("Service (%s) has been removed\n", service.Name)
+		return
+	} else if err != nil {
+		logger.Printf("Error: Could not read service file (%s)", service.Filepath)
+		return
+	}
+
+	newService := EnitService{
+		Name:             "",
+		Description:      "",
+		Dependencies:     make([]string, 0),
+		Type:             "",
+		StartCmd:         "",
+		ExitMethod:       "",
+		StopCmd:          "",
+		Restart:          "",
+		CrashOnSafeExit:  true,
+		LogOutput:        true,
+		Filepath:         service.Filepath,
+		filepathChecksum: checksum,
+		restartCount:     service.restartCount,
+		stopChannel:      service.stopChannel,
+		state:            service.state,
+	}
+	if err := yaml.Unmarshal(bytes, &newService); err != nil {
+		logger.Printf("Error: could not read service file %s", service.Filepath)
+		return
+	}
+
+	for _, sv := range Services {
+		if sv.Name == newService.Name && sv != service {
+			logger.Printf("Error: service with name (%s) has already been initialized", service.Name)
+		}
+	}
+
+	switch newService.Type {
+	case "simple", "background":
+	default:
+		logger.Printf("Error: unknown service type (%s)", newService.Type)
+		return
+	}
+
+	switch newService.ExitMethod {
+	case "stop_command", "kill":
+	default:
+		logger.Printf("Error: unknown exit method (%s)\n", newService.ExitMethod)
+		return
+	}
+
+	switch newService.Restart {
+	case "true", "always":
+	default:
+		newService.Restart = "false"
+	}
+
+	for i, sv := range Services {
+		if sv == service {
+			Services[i] = &newService
+		}
+	}
+
+	logger.Printf("Service (%s) has been reloaded!\n", newService.Name)
 }
 
 func (service *EnitService) StartService() (err error) {
@@ -218,6 +306,14 @@ func (service *EnitService) StartService() (err error) {
 				service.restartCount = 0
 				if service.ExitMethod != "stop_command" {
 					service.state = EnitServiceCompleted
+
+					// Reload service if needed
+					if service.shouldReload {
+						service.ReloadService()
+						if GetServiceByName(service.Name) == nil {
+							return
+						}
+					}
 				} else {
 					service.state = EnitServiceRunning
 				}
@@ -229,6 +325,15 @@ func (service *EnitService) StartService() (err error) {
 			} else {
 				logger.Printf("Service (%s) has crashed!\n", service.Name)
 				service.state = EnitServiceCrashed
+			}
+
+			// Reload service if needed
+			if service.shouldReload {
+				service.ReloadService()
+				if GetServiceByName(service.Name) == nil {
+					return
+				}
+				service = GetServiceByName(service.Name)
 			}
 
 			if service.Restart == "always" {
@@ -263,6 +368,15 @@ func (service *EnitService) StopService() error {
 	defer func() {
 		service.state = newServiceStatus
 		service.processID = 0
+
+		// Reload service if needed
+		if service.shouldReload {
+			service.ReloadService()
+			if GetServiceByName(service.Name) == nil {
+				return
+			}
+			service = GetServiceByName(service.Name)
+		}
 	}()
 
 	if service.ExitMethod == "kill" {

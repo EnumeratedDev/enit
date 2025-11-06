@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"io"
@@ -143,19 +144,21 @@ func Init() {
 			}
 
 			service := EnitService{
-				Name:            "",
-				Description:     "",
-				Dependencies:    make([]string, 0),
-				Type:            "",
-				StartCmd:        "",
-				ExitMethod:      "",
-				StopCmd:         "",
-				Restart:         "",
-				CrashOnSafeExit: true,
-				restartCount:    0,
-				stopChannel:     make(chan bool),
-				LogOutput:       true,
-				state:           EnitServiceUnloaded,
+				Name:             "",
+				Description:      "",
+				Dependencies:     make([]string, 0),
+				Type:             "",
+				StartCmd:         "",
+				ExitMethod:       "",
+				StopCmd:          "",
+				Restart:          "",
+				CrashOnSafeExit:  true,
+				LogOutput:        true,
+				Filepath:         path.Join(serviceConfigDir, "services", entry.Name()),
+				filepathChecksum: sha256.Sum256(bytes),
+				restartCount:     0,
+				stopChannel:      make(chan bool),
+				state:            EnitServiceUnloaded,
 			}
 			if err := yaml.Unmarshal(bytes, &service); err != nil {
 				logger.Printf("Error: could not read service file %s", path.Join(serviceConfigDir, "services", entry.Name()))
@@ -225,6 +228,16 @@ func Init() {
 	}
 
 	logger.Println("ESVM initialized successfully!")
+}
+
+func Reload() {
+	logger.Println("Reloading all ESVM services...")
+
+	for _, service := range Services {
+		service.ReloadService()
+	}
+
+	logger.Println("All ESVM services have been reloaded!")
 }
 
 func Destroy() {

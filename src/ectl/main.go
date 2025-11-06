@@ -57,7 +57,59 @@ func main() {
 		return
 	} else if flag.Args()[0] == "service" || flag.Args()[0] == "sv" {
 		if len(flag.Args()) <= 1 {
-			fmt.Println("Usage: ectl service <start/stop/enable/disable/status/list> [service]")
+			fmt.Println("Usage: ectl service <reload/start/stop/enable/disable/status/list> [service]")
+			return
+		}
+		if flag.Arg(1) == "reload" {
+			type ServiceCommandJsonStruct struct {
+				Command string `json:"command"`
+				Service string `json:"service"`
+			}
+			serviceCommandJson := ServiceCommandJsonStruct{
+				Command: flag.Arg(1),
+			}
+
+			// Encode struct to json string
+			jsonData, err := json.Marshal(serviceCommandJson)
+			if err != nil {
+				log.Fatalf("Could not encode JSON data! Error: %s\n", err)
+			}
+
+			_, err = conn.Write(jsonData)
+			if err != nil {
+				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
+			}
+
+			// Create a buffer for incoming data.
+			buf := make([]byte, 4096)
+
+			// Read data from the connection.
+			n, err := conn.Read(buf)
+			if err != nil {
+				return
+			}
+
+			// Print json data if flag is set
+			if *printJson {
+				fmt.Println(string(buf[:n]))
+				return
+			}
+
+			// Decoode JSON data
+			var returnedJsonData map[string]any
+			err = json.Unmarshal(buf[:n], &returnedJsonData)
+			if err != nil {
+				log.Fatalf("Could not decode JSON data from connection!")
+			}
+
+			if err, ok := returnedJsonData["error"]; ok {
+				log.Fatal(err)
+			} else if msg, ok := returnedJsonData["success"]; ok {
+				fmt.Println(msg)
+			} else {
+				log.Fatal("Connection returned empty string!")
+			}
+
 			return
 		} else if flag.Arg(1) == "start" || flag.Arg(1) == "stop" || flag.Arg(1) == "restart" {
 			// Ensure service name argument has been set

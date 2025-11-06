@@ -17,6 +17,7 @@ func initSocket() (socket net.Listener, err error) {
 	}
 
 	// Register command handlers
+	commandHandlers["reload"] = handleReloadServicesCommand
 	commandHandlers["start"] = handleStartServiceCommand
 	commandHandlers["stop"] = handleStopServiceCommand
 	commandHandlers["restart"] = handleRestartServiceCommand
@@ -72,6 +73,13 @@ func listenToSocket() {
 		}
 		commandHandler(conn, jsonData)
 	}(conn)
+}
+
+func handleReloadServicesCommand(conn net.Conn, jsonData map[string]any) {
+	// Reload services
+	Reload()
+
+	conn.Write(wrapSuccessMsgInJson("Services reloaded successfully"))
 }
 
 func handleStartServiceCommand(conn net.Conn, jsonData map[string]any) {
