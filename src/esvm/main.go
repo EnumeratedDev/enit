@@ -152,6 +152,7 @@ func Init() {
 				ExitMethod:       "",
 				StopCmd:          "",
 				Restart:          "",
+				Setpgid:          true,
 				CrashOnSafeExit:  true,
 				LogOutput:        true,
 				Filepath:         path.Join(serviceConfigDir, "services", entry.Name()),

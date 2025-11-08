@@ -5,3 +5,4 @@ start_cmd: /usr/bin/setsid /sbin/agetty tty5
 exit_method: kill
 crash_on_safe_exit: false
 restart: always
+setpgid: false

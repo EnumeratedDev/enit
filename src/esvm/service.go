@@ -48,6 +48,7 @@ type EnitService struct {
 	StopCmd          string   `yaml:"stop_cmd,omitempty"`
 	Restart          string   `yaml:"restart,omitempty"`
 	ReadyFd          int      `yaml:"ready_fd"`
+	Setpgid          bool     `yaml:"setpgid"`
 	LogOutput        bool     `yaml:"log_output,omitempty"`
 	Filepath         string
 	filepathChecksum [32]byte
@@ -157,6 +158,7 @@ func (service *EnitService) ReloadService() {
 		ExitMethod:       "",
 		StopCmd:          "",
 		Restart:          "",
+		Setpgid:          true,
 		CrashOnSafeExit:  true,
 		LogOutput:        true,
 		Filepath:         service.Filepath,
@@ -225,6 +227,7 @@ func (service *EnitService) StartService() (err error) {
 	}
 
 	cmd := exec.Command("/bin/sh", "-c", "exec "+service.StartCmd)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: service.Setpgid, Pgid: 0}
 	if logFile != nil {
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
@@ -278,8 +281,8 @@ func (service *EnitService) StartService() (err error) {
 				logFile.Close()
 			}
 
-			// Kill process
-			cmd.Process.Kill()
+			// Kill process and children
+			syscall.Kill(-service.processID, syscall.SIGKILL)
 
 			service.processID = 0
 			service.state = EnitServiceCrashed
@@ -302,6 +305,9 @@ func (service *EnitService) StartService() (err error) {
 		case <-service.stopChannel:
 			service.restartCount = 0
 		default:
+			// Kill remaining child processes
+			syscall.Kill(-service.processID, syscall.SIGKILL)
+
 			if service.Type == "simple" && err == nil {
 				service.restartCount = 0
 				if service.ExitMethod != "stop_command" {
@@ -363,9 +369,13 @@ func (service *EnitService) StopService() error {
 	}
 
 	logger.Printf("Stopping service (%s)...", service.Name)
+	pid := service.processID
 
 	newServiceStatus := EnitServiceCrashed
 	defer func() {
+		// Kill remaining child processes
+		syscall.Kill(-pid, syscall.SIGKILL)
+
 		service.state = newServiceStatus
 		service.processID = 0
 
