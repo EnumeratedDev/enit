@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -80,24 +81,22 @@ func main() {
 				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
 			}
 
-			// Create a buffer for incoming data.
-			buf := make([]byte, 4096)
-
 			// Read data from the connection.
-			n, err := conn.Read(buf)
+			data, err := readAllConn(conn)
 			if err != nil {
+				log.Fatalf("Could not read data from socket! Error: %s\n", err)
 				return
 			}
 
 			// Print json data if flag is set
 			if *printJson {
-				fmt.Println(string(buf[:n]))
+				fmt.Println(string(data))
 				return
 			}
 
 			// Decoode JSON data
 			var returnedJsonData map[string]any
-			err = json.Unmarshal(buf[:n], &returnedJsonData)
+			err = json.Unmarshal(data, &returnedJsonData)
 			if err != nil {
 				log.Fatalf("Could not decode JSON data from connection!")
 			}
@@ -138,27 +137,22 @@ func main() {
 				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
 			}
 
-			// Create a buffer for incoming data.
-			buf := make([]byte, 4096)
-
 			// Read data from the connection.
-			n, err := conn.Read(buf)
-			if err == io.EOF {
-				return
-			}
+			data, err := readAllConn(conn)
 			if err != nil {
+				log.Fatalf("Could not read data from socket! Error: %s\n", err)
 				return
 			}
 
 			// Print json data if flag is set
 			if *printJson {
-				fmt.Println(string(buf[:n]))
+				fmt.Println(string(data))
 				return
 			}
 
 			// Decoode JSON data
 			var returnedJsonData map[string]any
-			err = json.Unmarshal(buf[:n], &returnedJsonData)
+			err = json.Unmarshal(data, &returnedJsonData)
 			if err != nil {
 				log.Fatalf("Could not decode JSON data from connection!")
 			}
@@ -214,27 +208,22 @@ func main() {
 				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
 			}
 
-			// Create a buffer for incoming data.
-			buf := make([]byte, 4096)
-
 			// Read data from the connection.
-			n, err := conn.Read(buf)
-			if err == io.EOF {
-				return
-			}
+			data, err := readAllConn(conn)
 			if err != nil {
+				log.Fatalf("Could not read data from socket! Error: %s\n", err)
 				return
 			}
 
 			// Print json data if flag is set
 			if *printJson {
-				fmt.Println(string(buf[:n]))
+				fmt.Println(string(data))
 				return
 			}
 
 			// Decoode JSON data
 			var returnedJsonData map[string]any
-			err = json.Unmarshal(buf[:n], &returnedJsonData)
+			err = json.Unmarshal(data, &returnedJsonData)
 			if err != nil {
 				log.Fatalf("Could not decode JSON data from connection!")
 			}
@@ -275,27 +264,22 @@ func main() {
 				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
 			}
 
-			// Create a buffer for incoming data.
-			buf := make([]byte, 4096)
-
 			// Read data from the connection.
-			n, err := conn.Read(buf)
-			if err == io.EOF {
-				return
-			}
+			data, err := readAllConn(conn)
 			if err != nil {
+				log.Fatalf("Could not read data from socket! Error: %s\n", err)
 				return
 			}
 
 			// Print json data if flag is set
 			if *printJson {
-				fmt.Println(string(buf[:n]))
+				fmt.Println(string(data))
 				return
 			}
 
 			// Decoode JSON data
 			var returnedJsonData map[string]any
-			err = json.Unmarshal(buf[:n], &returnedJsonData)
+			err = json.Unmarshal(data, &returnedJsonData)
 			if err != nil {
 				log.Fatalf("Could not decode JSON data from connection!")
 			}
@@ -342,27 +326,22 @@ func main() {
 				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
 			}
 
-			// Create a buffer for incoming data.
-			buf := make([]byte, 4096)
-
 			// Read data from the connection.
-			n, err := conn.Read(buf)
-			if err == io.EOF {
-				return
-			}
+			data, err := readAllConn(conn)
 			if err != nil {
+				log.Fatalf("Could not read data from socket! Error: %s\n", err)
 				return
 			}
 
 			// Print json data if flag is set
 			if *printJson {
-				fmt.Println(string(buf[:n]))
+				fmt.Println(string(data))
 				return
 			}
 
 			// Decoode JSON data
 			var returnedJsonData map[string]any
-			err = json.Unmarshal(buf[:n], &returnedJsonData)
+			err = json.Unmarshal(data, &returnedJsonData)
 			if err != nil {
 				log.Fatalf("Could not decode JSON data from connection!")
 			}
@@ -429,4 +408,25 @@ func dialSocket() {
 	if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		log.Fatalf("Failed to set write deadline! Error: %s\n", err)
 	}
+}
+
+func readAllConn(conn net.Conn) ([]byte, error) {
+	var buf bytes.Buffer
+
+	for {
+		dataChunk := make([]byte, 1024)
+
+		n, err := conn.Read(dataChunk)
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+
+		buf.Write(dataChunk[:n])
+
+		if n < 1024 {
+			break
+		}
+	}
+
+	return buf.Bytes(), nil
 }

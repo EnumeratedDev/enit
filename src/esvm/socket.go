@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -32,27 +33,23 @@ func listenToSocket() {
 	conn, err := socket.Accept()
 	if err != nil {
 		logger.Println("Could not accept socket connection!")
-		panic(err)
+		return
 	}
 
 	// Handle the connection in a separate goroutine.
 	go func(conn net.Conn) {
 		defer conn.Close()
-		// Create a buffer for incoming data.
-		buf := make([]byte, 4096)
 
 		// Read data from the connection.
-		n, err := conn.Read(buf)
-		if err == io.EOF {
-			return
-		}
+		data, err := readAllConn(conn)
 		if err != nil {
+			logger.Fatalf("Could not read data from socket! Error: %s\n", err)
 			return
 		}
 
 		// Decoode JSON data
 		var jsonData map[string]any
-		err = json.Unmarshal(buf[:n], &jsonData)
+		err = json.Unmarshal(data, &jsonData)
 		if err != nil {
 			conn.Write(wrapErrorInJson(fmt.Errorf("Invalid JSON")))
 			return
@@ -302,4 +299,25 @@ func wrapSuccessMsgInJson(msg string) []byte {
 		return nil
 	}
 	return jsonData
+}
+
+func readAllConn(conn net.Conn) ([]byte, error) {
+	var buf bytes.Buffer
+
+	for {
+		dataChunk := make([]byte, 1024)
+
+		n, err := conn.Read(dataChunk)
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+
+		buf.Write(dataChunk[:n])
+
+		if n < 1024 {
+			break
+		}
+	}
+
+	return buf.Bytes(), nil
 }
