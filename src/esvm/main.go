@@ -199,7 +199,7 @@ func Init() {
 	}
 
 	// Read enabled services
-	ReadEnabledServices()
+	EnabledServices := ReadEnabledServices()
 
 	// Start enabled services
 	stages := slices.Collect(maps.Keys(EnabledServices))

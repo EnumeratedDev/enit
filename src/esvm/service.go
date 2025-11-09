@@ -60,7 +60,6 @@ type EnitService struct {
 }
 
 var Services = make([]*EnitService, 0)
-var EnabledServices = make(map[int][]string)
 var startedServicesOrder = make([]string, 0)
 
 func (service *EnitService) GetUnmetDependencies() (missingDependencies []string) {
@@ -446,10 +445,8 @@ func (service *EnitService) RestartService() error {
 	return nil
 }
 
-// Functions will be rewritten at some point to allow enabling unloaded services
-
 func (service *EnitService) isEnabled() (bool, int) {
-	for stage, services := range EnabledServices {
+	for stage, services := range ReadEnabledServices() {
 		if slices.Contains(services, service.Name) {
 			return true, stage
 		}
@@ -466,6 +463,8 @@ func (service *EnitService) SetEnabled(stage int) error {
 	if s == stage {
 		return nil
 	}
+
+	EnabledServices := ReadEnabledServices()
 
 	// Remove service from current stage
 	EnabledServices[s] = slices.DeleteFunc(EnabledServices[s], func(name string) bool {
@@ -493,10 +492,12 @@ func (service *EnitService) SetEnabled(stage int) error {
 	return nil
 }
 
-func ReadEnabledServices() error {
+func ReadEnabledServices() (EnabledServices map[int][]string) {
+	EnabledServices = make(map[int][]string)
+
 	data, err := os.ReadFile(path.Join(serviceConfigDir, "enabled_services"))
 	if err != nil {
-		return err
+		return EnabledServices
 	}
 
 	err = yaml.Unmarshal(data, &EnabledServices)
@@ -509,15 +510,15 @@ func ReadEnabledServices() error {
 		// Update enabled_services file
 		data, err := yaml.Marshal(EnabledServices)
 		if err != nil {
-			return err
+			return EnabledServices
 		}
 		err = os.WriteFile(path.Join(serviceConfigDir, "enabled_services"), data, 0644)
 		if err != nil {
-			return err
+			return EnabledServices
 		}
 
-		return nil
+		return EnabledServices
 	}
 
-	return nil
+	return EnabledServices
 }
