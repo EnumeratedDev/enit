@@ -38,18 +38,17 @@ var EnitServiceStateNames map[EnitServiceState]string = map[EnitServiceState]str
 }
 
 type EnitService struct {
-	Name             string   `yaml:"name"`
-	Description      string   `yaml:"description,omitempty"`
-	Dependencies     []string `yaml:"dependencies,omitempty"`
-	Type             string   `yaml:"type"`
-	StartCmd         string   `yaml:"start_cmd"`
-	ExitMethod       string   `yaml:"exit_method"`
-	CrashOnSafeExit  bool     `yaml:"crash_on_safe_exit"`
-	StopCmd          string   `yaml:"stop_cmd,omitempty"`
-	Restart          string   `yaml:"restart,omitempty"`
-	ReadyFd          int      `yaml:"ready_fd"`
-	Setpgid          bool     `yaml:"setpgid"`
-	LogOutput        bool     `yaml:"log_output,omitempty"`
+	Name             string `yaml:"name"`
+	Description      string `yaml:"description,omitempty"`
+	Type             string `yaml:"type"`
+	StartCmd         string `yaml:"start_cmd"`
+	ExitMethod       string `yaml:"exit_method"`
+	CrashOnSafeExit  bool   `yaml:"crash_on_safe_exit"`
+	StopCmd          string `yaml:"stop_cmd,omitempty"`
+	Restart          string `yaml:"restart,omitempty"`
+	ReadyFd          int    `yaml:"ready_fd"`
+	Setpgid          bool   `yaml:"setpgid"`
+	LogOutput        bool   `yaml:"log_output,omitempty"`
 	Filepath         string
 	filepathChecksum [32]byte
 	state            EnitServiceState
@@ -61,25 +60,6 @@ type EnitService struct {
 
 var Services = make([]*EnitService, 0)
 var startedServicesOrder = make([]string, 0)
-
-func (service *EnitService) GetUnmetDependencies() (missingDependencies []string) {
-	for _, dependency := range service.Dependencies {
-		if strings.HasPrefix(dependency, "/") {
-			// File dependency
-			if _, err := os.Stat(dependency); err != nil {
-				missingDependencies = append(missingDependencies, dependency)
-			}
-		} else {
-			// Service dependency
-			depService := GetServiceByName(dependency)
-			if depService == nil {
-				missingDependencies = append(missingDependencies, dependency)
-			}
-		}
-	}
-
-	return missingDependencies
-}
 
 func (service *EnitService) GetProcess() *os.Process {
 	process, _ := os.FindProcess(service.processID)
@@ -151,7 +131,6 @@ func (service *EnitService) ReloadService() {
 	newService := EnitService{
 		Name:             "",
 		Description:      "",
-		Dependencies:     make([]string, 0),
 		Type:             "",
 		StartCmd:         "",
 		ExitMethod:       "",

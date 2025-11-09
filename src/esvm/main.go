@@ -146,7 +146,6 @@ func Init() {
 			service := EnitService{
 				Name:             "",
 				Description:      "",
-				Dependencies:     make([]string, 0),
 				Type:             "",
 				StartCmd:         "",
 				ExitMethod:       "",
@@ -217,13 +216,11 @@ func Init() {
 					continue
 				}
 
-				if len(service.GetUnmetDependencies()) == 0 {
-					err := service.StartService()
-					if err != nil {
-						logger.Printf("Error: could not start service (%s): %s", service.Name, err)
-					}
-					remainingServices--
+				err := service.StartService()
+				if err != nil {
+					logger.Printf("Error: could not start service (%s): %s", service.Name, err)
 				}
+				remainingServices--
 			}
 		}
 	}
