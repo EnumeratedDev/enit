@@ -230,6 +230,7 @@ func handleStatusServiceCommand(conn net.Conn, jsonData map[string]any) {
 
 	statusMap := make(map[string]any)
 	statusMap["name"] = service.Name
+	statusMap["description"] = service.Description
 	statusMap["state"] = EnitServiceStateNames[service.state]
 	statusMap["process_id"] = service.processID
 	statusMap["is_enabled"], statusMap["stage"] = service.isEnabled()
@@ -252,6 +253,7 @@ func handleListServicesCommand(conn net.Conn, _ map[string]any) {
 	for _, service := range Services {
 		statusMap := make(map[string]any)
 		statusMap["name"] = service.Name
+		statusMap["description"] = service.Description
 		statusMap["state"] = EnitServiceStateNames[service.state]
 		statusMap["process_id"] = service.processID
 		statusMap["is_enabled"], statusMap["stage"] = service.isEnabled()

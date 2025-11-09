@@ -305,11 +305,13 @@ func main() {
 			}
 
 			serviceState := returnedJsonData["state"].(string)
+			serviceDescription := returnedJsonData["description"].(string)
 			serviceEnabled := returnedJsonData["is_enabled"].(bool)
 			serviceStage := int(returnedJsonData["stage"].(float64))
 			processID := int(returnedJsonData["process_id"].(float64))
 
 			fmt.Printf("Name: %s\n", flag.Arg(2))
+			fmt.Printf("Description: %s\n", serviceDescription)
 			fmt.Printf("State: %s\n", serviceState)
 			if serviceEnabled {
 				fmt.Printf("Enabled: %t (Stage %d)\n", serviceEnabled, serviceStage)
@@ -371,12 +373,14 @@ func main() {
 
 			for _, serviceMap := range returnedJsonData["services"].([]any) {
 				serviceName := serviceMap.(map[string]any)["name"].(string)
+				serviceDescription := serviceMap.(map[string]any)["description"].(string)
 				serviceState := serviceMap.(map[string]any)["state"].(string)
 				serviceEnabled := serviceMap.(map[string]any)["is_enabled"].(bool)
 				serviceStage := int(serviceMap.(map[string]any)["stage"].(float64))
 				processID := int(serviceMap.(map[string]any)["process_id"].(float64))
 
 				fmt.Printf("Name: %s\n", serviceName)
+				fmt.Printf("Description: %s\n", serviceDescription)
 				fmt.Printf("State: %s\n", serviceState)
 				if serviceEnabled {
 					fmt.Printf("Enabled: %t (Stage %d)\n", serviceEnabled, serviceStage)
