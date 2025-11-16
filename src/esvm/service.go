@@ -382,29 +382,31 @@ func (service *EnitService) StopService() error {
 			service.GetProcess().Signal(syscall.SIGKILL)
 			return fmt.Errorf("could not stop process gracefully")
 		}
-
-		// Check if the process has stopped gracefully, otherwise send sigkill on timeout
-		exited := make(chan bool)
-		go func() {
-			for {
-				if err := service.GetProcess().Signal(syscall.Signal(0)); err != nil {
-					break
-				}
-			}
-			exited <- true
-		}()
-
-		select {
-		case <-exited:
-		case <-time.After(5 * time.Second):
-			service.GetProcess().Signal(syscall.SIGKILL)
-			return fmt.Errorf("could not stop process gracefully")
-		}
 	} else {
+		go func() { service.stopChannel <- true }()
+
 		cmd := exec.Command("/bin/sh", "-c", service.StopCmd)
 		if err := cmd.Run(); err != nil {
 			return err
 		}
+	}
+
+	// Check if the process has stopped gracefully, otherwise send sigkill on timeout
+	exited := make(chan bool)
+	go func() {
+		for {
+			if err := syscall.Kill(pid, syscall.Signal(0)); err != nil {
+				break
+			}
+		}
+		exited <- true
+	}()
+
+	select {
+	case <-exited:
+	case <-time.After(5 * time.Second):
+		service.GetProcess().Signal(syscall.SIGKILL)
+		return fmt.Errorf("could not stop process gracefully")
 	}
 
 	newServiceStatus = EnitServiceStopped
