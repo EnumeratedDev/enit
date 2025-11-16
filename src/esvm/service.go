@@ -246,6 +246,7 @@ func (service *EnitService) StartService() (err error) {
 		return err
 	}
 
+	pid := cmd.Process.Pid
 	service.processID = cmd.Process.Pid
 	service.state = EnitServiceStarting
 
@@ -260,7 +261,7 @@ func (service *EnitService) StartService() (err error) {
 			}
 
 			// Kill process and children
-			syscall.Kill(-service.processID, syscall.SIGKILL)
+			syscall.Kill(-pid, syscall.SIGKILL)
 
 			service.processID = 0
 			service.state = EnitServiceCrashed
@@ -284,7 +285,7 @@ func (service *EnitService) StartService() (err error) {
 			service.restartCount = 0
 		default:
 			// Kill remaining child processes
-			syscall.Kill(-service.processID, syscall.SIGKILL)
+			syscall.Kill(-pid, syscall.SIGKILL)
 
 			if service.Type == "simple" && err == nil {
 				service.restartCount = 0
