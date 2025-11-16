@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"log"
@@ -78,42 +79,42 @@ func mountVirtualFilesystems() {
 
 	// Mount /proc
 	if err := mount("proc", "/proc", "proc", commonOptions+",nodev,noexec", false); err != nil {
-		panic(err)
+		printErrorAndReboot("Error: could not mount /proc: %s", err)
 	}
 
 	// Mount /sys
 	if err := mount("sys", "/sys", "sysfs", commonOptions+",nodev,noexec", false); err != nil {
-		panic(err)
+		printErrorAndReboot("Error: could not mount /sys: %s", err)
 	}
 
 	// Mount /dev
 	if err := mount("dev", "/dev", "devtmpfs", commonOptions+",mode=755,inode64", false); err != nil {
-		panic(err)
+		printErrorAndReboot("Error: could not mount /dev: %s", err)
 	}
 
 	// Mount /run
 	if err := mount("run", "/run", "tmpfs", commonOptions+",nodev,mode=755,inode64", false); err != nil {
-		panic(err)
+		printErrorAndReboot("Error: could not mount /run: %s", err)
 	}
 
 	// Mount /dev/pts
 	if err := mount("devpts", "/dev/pts", "devpts", commonOptions+",gid=5,mode=620,ptmxmode=000", true); err != nil {
-		panic(err)
+		printErrorAndReboot("Error: could not mount /dev/pts: %s", err)
 	}
 
 	// Mount /dev/shm
 	if err := mount("shm", "/dev/shm", "tmpfs", commonOptions+",nodev,inode64", true); err != nil {
-		panic(err)
+		printErrorAndReboot("Error: could not mount /dev/shm: %s", err)
 	}
 
 	// Mount securityfs
 	if err := mount("securityfs", "/sys/kernel/security", "securityfs", commonOptions, false); err != nil {
-		panic(err)
+		printErrorAndReboot("Error: could not mount /sys/kernel/security: %s", err)
 	}
 
 	// Mount cgroups v2
 	if err := mount("cgroup2", "/sys/fs/cgroup", "cgroup2", commonOptions+",noexec,nsdelegate,memory_recursiveprot", false); err != nil {
-		panic(err)
+		printErrorAndReboot("Error: could not mount /sys/fs/cgroup: %s", err)
 	}
 
 	fmt.Println("Done.")
@@ -122,9 +123,8 @@ func mountVirtualFilesystems() {
 func mountFilesystems() {
 	fmt.Print("Mounting fstab entries... ")
 
-	if err := mountFstabEntries(); err != nil {
-		log.Println("Could not mount fstab entries!")
-		panic(err)
+	if err, line := mountFstabEntries(); err != nil {
+		printErrorAndReboot("Error: could not mount fstab entry on line %d: %s", line, err)
 	}
 
 	fmt.Println("Done.")
@@ -138,8 +138,7 @@ func startServiceManager() {
 	cmd.Stderr = os.Stderr
 	err := cmd.Start()
 	if err != nil {
-		log.Println("Could not initialize service manager!")
-		panic(err)
+		printErrorAndReboot("Error: could not initialize service manager: %s", err)
 	}
 	serviceManagerPid = cmd.Process.Pid
 
@@ -257,4 +256,11 @@ func rebootSystem() {
 	if err != nil {
 		panic(err)
 	}
+}
+
+func printErrorAndReboot(format string, v ...any) {
+	log.Printf(format, v...)
+	fmt.Println("Press 'Enter' to reboot...")
+	bufio.NewReader(os.Stdin).ReadBytes('\n')
+	rebootSystem()
 }
