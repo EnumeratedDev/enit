@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"time"
 	"unsafe"
+
+	"github.com/mitchellh/go-ps"
 )
 
 // Build-time variables
@@ -184,6 +186,40 @@ func stopServiceManager() {
 
 }
 
+func killProcesses() {
+	fmt.Print("Killing processes... ")
+
+	// Send sigterm to all processes
+	processes, err := ps.Processes()
+	if err != nil {
+		return
+	}
+	for _, process := range processes {
+		if process.Pid() == 1 {
+			continue
+		}
+
+		syscall.Kill(process.Pid(), syscall.SIGTERM)
+	}
+
+	time.Sleep(1 * time.Second)
+
+	// Send sigkill to remaining processes
+	processes, err = ps.Processes()
+	if err != nil {
+		return
+	}
+	for _, process := range processes {
+		if process.Pid() == 1 {
+			continue
+		}
+
+		syscall.Kill(process.Pid(), syscall.SIGKILL)
+	}
+
+	fmt.Println("Done.")
+}
+
 func setHostname() {
 	fmt.Print("Setting hostname... ")
 
@@ -232,9 +268,12 @@ func shutdownSystem() {
 	fmt.Println("Shutting down...")
 
 	stopServiceManager()
+	killProcesses()
+	unmountFilesystems()
 
-	fmt.Println("Syncing disks...")
+	fmt.Print("Syncing disks... ")
 	syscall.Sync()
+	fmt.Println("Done.")
 
 	fmt.Println("Sending shutdown syscall...")
 	err := syscall.Reboot(syscall.LINUX_REBOOT_CMD_POWER_OFF)
@@ -247,9 +286,12 @@ func rebootSystem() {
 	fmt.Println("Rebooting...")
 
 	stopServiceManager()
+	killProcesses()
+	unmountFilesystems()
 
-	fmt.Println("Syncing disks...")
+	fmt.Print("Syncing disks... ")
 	syscall.Sync()
+	fmt.Println("Done.")
 
 	fmt.Println("Sending reboot syscall...")
 	err := syscall.Reboot(syscall.LINUX_REBOOT_CMD_RESTART)

@@ -1,11 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
 	"slices"
 	"strings"
+	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -202,4 +205,131 @@ func mountFstabEntries() (error, int) {
 	}
 
 	return nil, 0
+}
+
+func unmountFilesystems() {
+	// Disable all swap memory
+	data, err := os.ReadFile("/proc/swaps")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for i, entry := range strings.Split(string(data), "\n") {
+		if i == 0 {
+			continue
+		}
+		entry = strings.TrimSpace(entry)
+		if len(entry) == 0 {
+			continue
+		}
+
+		mountpoint := strings.Fields(entry)[0]
+
+		// Unmount swap at mountpoint
+		fmt.Printf("Disabling swap at %s... ", mountpoint)
+		b := append([]byte(mountpoint), 0)
+		_, _, err := unix.Syscall(unix.SYS_SWAPOFF, uintptr(unsafe.Pointer(&b[0])), 0, 0)
+		if err == 0 {
+			fmt.Println("Done.")
+		} else {
+			fmt.Printf("Error: %s\n", err.Error())
+		}
+	}
+
+	data, err = os.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Reserve variables for root filesytem
+	rootSource := ""
+	rootFilesystem := ""
+	rootData := ""
+
+	// Unmount filesystems
+	entries := strings.Split(string(data), "\n")
+	slices.Reverse(entries)
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if len(entry) == 0 {
+			continue
+		}
+
+		// Get entry fields
+		fields := strings.Fields(entry)
+		mountpoint := fields[4]
+		filesystem := ""
+		source := ""
+		data := ""
+		for i := 6; i < len(fields); i++ {
+			if fields[i] == "-" {
+				filesystem = fields[i+1]
+				source = fields[i+2]
+				data = fields[i+3]
+				break
+			}
+		}
+
+		// Skip root and ignored filesystems
+		ignoredFilesystems := []string{
+			"devtmpfs",
+			"proc",
+			"sysfs",
+			"tmpfs",
+		}
+		if mountpoint == "/" {
+			rootSource = source
+			rootFilesystem = filesystem
+			_, rootData, _ = convertMountOptions(data)
+			continue
+		}
+
+		if slices.Contains(ignoredFilesystems, filesystem) {
+			continue
+		}
+
+		// Unmount filesystem at mountpoint
+		fmt.Printf("Unmounting %s...", mountpoint)
+		tries := 0
+		for {
+			err := unix.Unmount(mountpoint, 0)
+			if errors.Is(err, syscall.EBUSY) {
+				fmt.Print(".")
+				tries++
+				time.Sleep(1 * time.Second)
+				if tries >= 60 {
+					unix.Unmount(mountpoint, syscall.MNT_FORCE)
+					fmt.Println(" Timeout.")
+					break
+				}
+			} else if err != nil {
+				fmt.Printf(" Error: %s\n", err.Error())
+				break
+			} else {
+				fmt.Println(" Done.")
+				break
+			}
+		}
+	}
+
+	fmt.Print("Remounting root as read-only...")
+	tries := 0
+	for {
+		err = unix.Mount(rootSource, "/", rootFilesystem, syscall.MS_RDONLY|syscall.MS_REMOUNT, rootData)
+		if errors.Is(err, syscall.EBUSY) {
+			fmt.Print(".")
+			tries++
+			time.Sleep(1 * time.Second)
+			if tries >= 60 {
+				fmt.Println(" Timeout.")
+				break
+			}
+		} else if err != nil {
+			fmt.Printf(" Error: %s\n", err.Error())
+			break
+		} else {
+			fmt.Println(" Done.")
+			break
+		}
+	}
 }
