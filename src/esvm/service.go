@@ -353,7 +353,9 @@ func (service *EnitService) StopService() error {
 	newServiceStatus := EnitServiceCrashed
 	defer func() {
 		// Kill remaining child processes
-		syscall.Kill(-pid, syscall.SIGKILL)
+		if pid != 0 {
+			syscall.Kill(-pid, syscall.SIGKILL)
+		}
 
 		service.state = newServiceStatus
 		service.processID = 0
