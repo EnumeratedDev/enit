@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/sha256"
 	"flag"
 	"fmt"
 	"io"
@@ -15,8 +14,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 // Build-time variables
@@ -136,64 +133,8 @@ func Init() {
 	// Read and initialize service files
 	for _, entry := range dirEntries {
 		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".esv") {
-			logger.Printf("Initializing service (%s)...\n", entry.Name())
-			bytes, err := os.ReadFile(path.Join(serviceConfigDir, "services", entry.Name()))
-			if err != nil {
-				logger.Printf("Error: Could not read service file (%s)", path.Join(serviceConfigDir, "services", entry.Name()))
-				continue
-			}
-
-			service := EnitService{
-				Name:             "",
-				Description:      "",
-				Type:             "",
-				StartCmd:         "",
-				ExitMethod:       "",
-				StopCmd:          "",
-				Restart:          "",
-				Setpgid:          true,
-				CrashOnSafeExit:  true,
-				LogOutput:        true,
-				Filepath:         path.Join(serviceConfigDir, "services", entry.Name()),
-				filepathChecksum: sha256.Sum256(bytes),
-				restartCount:     0,
-				stopChannel:      make(chan bool),
-				state:            EnitServiceUnloaded,
-			}
-			if err := yaml.Unmarshal(bytes, &service); err != nil {
-				logger.Printf("Error: could not read service file %s", path.Join(serviceConfigDir, "services", entry.Name()))
-				continue
-			}
-
-			for _, sv := range Services {
-				if sv.Name == service.Name {
-					logger.Printf("Error: service with name (%s) has already been initialized", service.Name)
-				}
-			}
-
-			switch service.Type {
-			case "simple", "background":
-			default:
-				logger.Printf("Error: unknown service type (%s)", service.Type)
-				continue
-			}
-
-			switch service.ExitMethod {
-			case "stop_command", "kill":
-			default:
-				logger.Printf("Error: unknown exit method (%s)\n", service.ExitMethod)
-				continue
-			}
-
-			switch service.Restart {
-			case "true", "always":
-			default:
-				service.Restart = "false"
-			}
-
-			Services = append(Services, &service)
-
-			logger.Printf("Service (%s) has been initialized!\n", service.Name)
+			filepath := path.Join(serviceConfigDir, "services", entry.Name())
+			LoadService(filepath)
 		}
 	}
 
@@ -231,8 +172,26 @@ func Init() {
 func Reload() {
 	logger.Println("Reloading all ESVM services...")
 
-	for _, service := range Services {
-		service.ReloadService()
+	dirEntries, err := os.ReadDir(path.Join(serviceConfigDir, "services"))
+	if err != nil {
+		logger.Fatalf("Error: Could not initialize ESVM: %s", err)
+	}
+
+	// Read and load service files
+	servicesToRemove := slices.Clone(Services)
+	for _, entry := range dirEntries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".esv") {
+			filepath := path.Join(serviceConfigDir, "services", entry.Name())
+			LoadService(filepath)
+			servicesToRemove = slices.DeleteFunc(servicesToRemove, func(sv *EnitService) bool {
+				return sv.Filepath == filepath
+			})
+		}
+	}
+
+	// Reload services that had their esv file removed
+	for _, service := range servicesToRemove {
+		LoadService(service.Filepath)
 	}
 
 	logger.Println("All ESVM services have been reloaded!")

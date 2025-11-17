@@ -101,30 +101,51 @@ func (service *EnitService) GetLogFile() (file *os.File, err error) {
 	return file, nil
 }
 
-func (service *EnitService) ReloadService() {
-	bytes, err := os.ReadFile(service.Filepath)
+func LoadService(filepath string) {
+	bytes, err := os.ReadFile(filepath)
 	checksum := sha256.Sum256(bytes)
-	if slices.Equal(checksum[:], service.filepathChecksum[:]) {
-		return
+
+	var serviceToReload *EnitService
+
+	// Check if service is already loaded
+	for _, service := range Services {
+		if service.Filepath != filepath {
+			continue
+		}
+
+		if slices.Equal(checksum[:], service.filepathChecksum[:]) {
+			return
+		}
+
+		if service.state == EnitServiceStarting || service.state == EnitServiceRunning {
+			service.shouldReload = true
+			logger.Printf("Warning: Service (%s) is currently running and will be reloaded when stopped\n", service.Name)
+			return
+		}
+		service.shouldReload = false
+		serviceToReload = service
+
+		break
 	}
 
-	if service.state == EnitServiceStarting || service.state == EnitServiceRunning {
-		service.shouldReload = true
-		logger.Printf("Warning: Service (%s) is currently running and will be reloaded when stopped\n", service.Name)
-		return
+	if serviceToReload == nil {
+		logger.Printf("Loading service (%s)...\n", filepath)
+	} else {
+		logger.Printf("Reloading service (%s)...\n", filepath)
 	}
-	service.shouldReload = false
-
-	logger.Printf("Reloading service (%s)...\n", service.Filepath)
 
 	if os.IsNotExist(err) {
 		Services = slices.DeleteFunc(Services, func(sv *EnitService) bool {
-			return sv == service
+			if sv.Filepath == filepath {
+				logger.Printf("Service (%s) has been removed\n", sv.Name)
+				return true
+			}
+			return false
 		})
-		logger.Printf("Service (%s) has been removed\n", service.Name)
+
 		return
 	} else if err != nil {
-		logger.Printf("Error: Could not read service file (%s)", service.Filepath)
+		logger.Printf("Error: Could not read service file (%s)", filepath)
 		return
 	}
 
@@ -139,20 +160,26 @@ func (service *EnitService) ReloadService() {
 		Setpgid:          true,
 		CrashOnSafeExit:  true,
 		LogOutput:        true,
-		Filepath:         service.Filepath,
-		filepathChecksum: checksum,
-		restartCount:     service.restartCount,
-		stopChannel:      service.stopChannel,
-		state:            service.state,
+		Filepath:         filepath,
+		filepathChecksum: sha256.Sum256(bytes),
+		restartCount:     0,
+		stopChannel:      make(chan bool),
+		state:            EnitServiceUnloaded,
+	}
+	if serviceToReload != nil {
+		newService.restartCount = serviceToReload.restartCount
+		newService.stopChannel = serviceToReload.stopChannel
+		newService.state = serviceToReload.state
 	}
 	if err := yaml.Unmarshal(bytes, &newService); err != nil {
-		logger.Printf("Error: could not read service file %s", service.Filepath)
+		logger.Printf("Error: could not read service file %s", filepath)
 		return
 	}
 
 	for _, sv := range Services {
-		if sv.Name == newService.Name && sv != service {
-			logger.Printf("Error: service with name (%s) has already been initialized", service.Name)
+		if sv.Name == newService.Name && sv != serviceToReload {
+			logger.Printf("Error: service with name (%s) has already been loaded", newService.Name)
+			return
 		}
 	}
 
@@ -177,12 +204,15 @@ func (service *EnitService) ReloadService() {
 	}
 
 	for i, sv := range Services {
-		if sv == service {
+		if sv == serviceToReload {
 			Services[i] = &newService
+			logger.Printf("Service (%s) has been reloaded!\n", newService.Name)
+			return
 		}
 	}
 
-	logger.Printf("Service (%s) has been reloaded!\n", newService.Name)
+	Services = append(Services, &newService)
+	logger.Printf("Service (%s) has been loaded!\n", newService.Name)
 }
 
 func (service *EnitService) StartService() (err error) {
@@ -294,7 +324,7 @@ func (service *EnitService) StartService() (err error) {
 
 					// Reload service if needed
 					if service.shouldReload {
-						service.ReloadService()
+						LoadService(service.Filepath)
 						if GetServiceByName(service.Name) == nil {
 							return
 						}
@@ -314,7 +344,7 @@ func (service *EnitService) StartService() (err error) {
 
 			// Reload service if needed
 			if service.shouldReload {
-				service.ReloadService()
+				LoadService(service.Filepath)
 				if GetServiceByName(service.Name) == nil {
 					return
 				}
@@ -362,7 +392,7 @@ func (service *EnitService) StopService() error {
 
 		// Reload service if needed
 		if service.shouldReload {
-			service.ReloadService()
+			LoadService(service.Filepath)
 			if GetServiceByName(service.Name) == nil {
 				return
 			}
@@ -421,6 +451,12 @@ func (service *EnitService) RestartService() error {
 	if err := service.StopService(); err != nil {
 		return err
 	}
+
+	// Get service from list in case of a reload
+	if GetServiceByName(service.Name) == nil {
+		return fmt.Errorf("service was removed")
+	}
+	service = GetServiceByName(service.Name)
 
 	if err := service.StartService(); err != nil {
 		return err
