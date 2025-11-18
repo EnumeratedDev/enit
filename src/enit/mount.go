@@ -241,11 +241,6 @@ func unmountFilesystems() {
 		log.Fatal(err)
 	}
 
-	// Reserve variables for root filesytem
-	rootSource := ""
-	rootFilesystem := ""
-	rootData := ""
-
 	// Unmount filesystems
 	entries := strings.Split(string(data), "\n")
 	slices.Reverse(entries)
@@ -259,15 +254,16 @@ func unmountFilesystems() {
 		fields := strings.Fields(entry)
 		mountpoint := fields[4]
 		filesystem := ""
-		source := ""
-		data := ""
 		for i := 6; i < len(fields); i++ {
 			if fields[i] == "-" {
 				filesystem = fields[i+1]
-				source = fields[i+2]
-				data = fields[i+3]
 				break
 			}
+		}
+
+		// Skip root filesystem
+		if mountpoint == "/" {
+			continue
 		}
 
 		// Skip root and ignored filesystems
@@ -276,12 +272,6 @@ func unmountFilesystems() {
 			"proc",
 			"sysfs",
 			"tmpfs",
-		}
-		if mountpoint == "/" {
-			rootSource = source
-			rootFilesystem = filesystem
-			_, rootData, _ = convertMountOptions(data)
-			continue
 		}
 
 		if slices.Contains(ignoredFilesystems, filesystem) {
@@ -311,11 +301,49 @@ func unmountFilesystems() {
 			}
 		}
 	}
+}
 
+func remountRootReadonly() {
 	fmt.Print("Remounting root as read-only...")
+
+	data, err := os.ReadFile("/proc/self/mountinfo")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	filesystem := ""
+	source := ""
+	fsData := ""
+
+	// Get root filesystems
+	entries := strings.Split(string(data), "\n")
+	slices.Reverse(entries)
+	for _, entry := range entries {
+		entry = strings.TrimSpace(entry)
+		if len(entry) == 0 {
+			continue
+		}
+
+		// Get entry fields
+		fields := strings.Fields(entry)
+		mountpoint := fields[4]
+		for i := 6; i < len(fields); i++ {
+			if fields[i] == "-" {
+				filesystem = fields[i+1]
+				source = fields[i+2]
+				fsData = fields[i+3]
+				break
+			}
+		}
+
+		if mountpoint == "/" {
+			break
+		}
+	}
+
 	tries := 0
 	for {
-		err = unix.Mount(rootSource, "/", rootFilesystem, syscall.MS_RDONLY|syscall.MS_REMOUNT, rootData)
+		err := unix.Mount(source, "/", filesystem, syscall.MS_RDONLY|syscall.MS_REMOUNT, fsData)
 		if errors.Is(err, syscall.EBUSY) {
 			fmt.Print(".")
 			tries++

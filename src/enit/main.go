@@ -195,7 +195,8 @@ func killProcesses() {
 		return
 	}
 	for _, process := range processes {
-		if process.Pid() == 1 {
+		sid, _, _ := syscall.Syscall(syscall.SYS_GETSID, uintptr(process.Pid()), 0, 0)
+		if process.Pid() == 1 || sid == 1 {
 			continue
 		}
 
@@ -210,7 +211,8 @@ func killProcesses() {
 		return
 	}
 	for _, process := range processes {
-		if process.Pid() == 1 {
+		sid, _, _ := syscall.Syscall(syscall.SYS_GETSID, uintptr(process.Pid()), 0, 0)
+		if process.Pid() == 1 || sid == 1 {
 			continue
 		}
 
@@ -270,6 +272,7 @@ func shutdownSystem() {
 	stopServiceManager()
 	killProcesses()
 	unmountFilesystems()
+	remountRootReadonly()
 
 	fmt.Print("Syncing disks... ")
 	syscall.Sync()
@@ -288,6 +291,7 @@ func rebootSystem() {
 	stopServiceManager()
 	killProcesses()
 	unmountFilesystems()
+	remountRootReadonly()
 
 	fmt.Print("Syncing disks... ")
 	syscall.Sync()
