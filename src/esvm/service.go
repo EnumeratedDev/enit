@@ -325,12 +325,7 @@ func (service *EnitService) StartService() (err error) {
 					// Reload service if needed
 					if service.shouldReload {
 						LoadService(service.Filepath)
-						if GetServiceByName(service.Name) == nil {
-							return
-						}
 					}
-				} else {
-					service.state = EnitServiceRunning
 				}
 				return
 			}
@@ -423,22 +418,24 @@ func (service *EnitService) StopService() error {
 		}
 	}
 
-	// Check if the process has stopped gracefully, otherwise send sigkill on timeout
-	exited := make(chan bool)
-	go func() {
-		for {
-			if err := syscall.Kill(pid, syscall.Signal(0)); err != nil {
-				break
+	if service.Type == "background" {
+		// Check if the process has stopped gracefully, otherwise send sigkill on timeout
+		exited := make(chan bool)
+		go func() {
+			for {
+				if err := syscall.Kill(pid, syscall.Signal(0)); err != nil {
+					break
+				}
 			}
-		}
-		exited <- true
-	}()
+			exited <- true
+		}()
 
-	select {
-	case <-exited:
-	case <-time.After(5 * time.Second):
-		service.GetProcess().Signal(syscall.SIGKILL)
-		return fmt.Errorf("could not stop process gracefully")
+		select {
+		case <-exited:
+		case <-time.After(5 * time.Second):
+			service.GetProcess().Signal(syscall.SIGKILL)
+			return fmt.Errorf("could not stop process gracefully")
+		}
 	}
 
 	newServiceStatus = EnitServiceStopped
