@@ -175,7 +175,7 @@ func stopServiceManager() {
 		case <-exited:
 			fmt.Println("Done.")
 			return
-		case <-time.After(60 * time.Second):
+		case <-time.After(300 * time.Second):
 			log.Println("Could not stop service manager!")
 			syscall.Kill(serviceManagerPid, syscall.SIGKILL)
 			return

@@ -280,25 +280,14 @@ func unmountFilesystems() {
 
 		// Unmount filesystem at mountpoint
 		fmt.Printf("Unmounting %s...", mountpoint)
-		tries := 0
-		for {
-			err := unix.Unmount(mountpoint, 0)
-			if errors.Is(err, syscall.EBUSY) {
-				fmt.Print(".")
-				tries++
-				time.Sleep(1 * time.Second)
-				if tries >= 60 {
-					unix.Unmount(mountpoint, syscall.MNT_FORCE)
-					fmt.Println(" Timeout.")
-					break
-				}
-			} else if err != nil {
-				fmt.Printf(" Error: %s\n", err.Error())
-				break
-			} else {
-				fmt.Println(" Done.")
-				break
-			}
+		err := unix.Unmount(mountpoint, 0)
+		if errors.Is(err, syscall.EBUSY) {
+			fmt.Println(" Busy.")
+			time.Sleep(1 * time.Second)
+		} else if err != nil {
+			fmt.Printf(" Error: %s\n", err.Error())
+		} else {
+			fmt.Println(" Done.")
 		}
 	}
 }
@@ -341,23 +330,12 @@ func remountRootReadonly() {
 		}
 	}
 
-	tries := 0
-	for {
-		err := unix.Mount(source, "/", filesystem, syscall.MS_RDONLY|syscall.MS_REMOUNT, fsData)
-		if errors.Is(err, syscall.EBUSY) {
-			fmt.Print(".")
-			tries++
-			time.Sleep(1 * time.Second)
-			if tries >= 60 {
-				fmt.Println(" Timeout.")
-				break
-			}
-		} else if err != nil {
-			fmt.Printf(" Error: %s\n", err.Error())
-			break
-		} else {
-			fmt.Println(" Done.")
-			break
-		}
+	err = unix.Mount(source, "/", filesystem, syscall.MS_RDONLY|syscall.MS_REMOUNT, fsData)
+	if errors.Is(err, syscall.EBUSY) {
+		fmt.Println(" Busy.")
+	} else if err != nil {
+		fmt.Printf(" Error: %s\n", err.Error())
+	} else {
+		fmt.Println(" Done.")
 	}
 }

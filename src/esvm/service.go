@@ -432,7 +432,7 @@ func (service *EnitService) StopService() error {
 
 		select {
 		case <-exited:
-		case <-time.After(5 * time.Second):
+		case <-time.After(15 * time.Second):
 			service.GetProcess().Signal(syscall.SIGKILL)
 			return fmt.Errorf("could not stop process gracefully")
 		}

@@ -405,7 +405,7 @@ func dialSocket() {
 		log.Fatalf("Failed to connect to esvm.sock! Error: %s\n", err)
 	}
 
-	if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
 		log.Fatalf("Failed to set write deadline! Error: %s\n", err)
 	}
 }
