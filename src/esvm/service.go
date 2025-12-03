@@ -6,8 +6,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/user"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -45,6 +47,7 @@ type EnitService struct {
 	ExitMethod       string `yaml:"exit_method"`
 	CrashOnSafeExit  bool   `yaml:"crash_on_safe_exit"`
 	StopCmd          string `yaml:"stop_cmd,omitempty"`
+	User             string `yaml:"user,omitempty"`
 	Restart          string `yaml:"restart,omitempty"`
 	ReadyFd          int    `yaml:"ready_fd"`
 	Setpgid          bool   `yaml:"setpgid"`
@@ -156,6 +159,7 @@ func LoadService(filepath string) {
 		StartCmd:         "",
 		ExitMethod:       "",
 		StopCmd:          "",
+		User:             "",
 		Restart:          "",
 		Setpgid:          true,
 		CrashOnSafeExit:  true,
@@ -236,10 +240,38 @@ func (service *EnitService) StartService() (err error) {
 
 	cmd := exec.Command("/bin/sh", "-c", "exec "+service.StartCmd)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: service.Setpgid, Pgid: 0}
+
+	// Setup service log file
 	if logFile != nil {
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
 	}
+
+	// Setup command credentials
+	if service.User != "" && service.User != "root" {
+		// Lookup user in /etc/passwd
+		u, err := user.Lookup(service.User)
+		if err != nil {
+			return err
+		}
+
+		// Get user id and group id
+		uid, err := strconv.Atoi(u.Uid)
+		if err != nil {
+			return err
+		}
+		gid, err := strconv.Atoi(u.Gid)
+		if err != nil {
+			return err
+		}
+
+		cmd.SysProcAttr.Credential = &syscall.Credential{
+			Uid: uint32(uid),
+			Gid: uint32(gid),
+		}
+	}
+
+	// Setup command pipes
 	var pipeReader, pipeWriter *os.File
 	if service.ReadyFd > 2 {
 		pipeReader, pipeWriter, err = os.Pipe()
@@ -267,6 +299,7 @@ func (service *EnitService) StartService() (err error) {
 		}
 		cmd.ExtraFiles = append(cmd.ExtraFiles, pipeWriter)
 	}
+
 	if err := cmd.Start(); err != nil {
 		// Close log file if not nil
 		if logFile != nil {
@@ -413,6 +446,31 @@ func (service *EnitService) StopService() error {
 		go func() { service.stopChannel <- true }()
 
 		cmd := exec.Command("/bin/sh", "-c", service.StopCmd)
+
+		// Setup command credentials
+		if service.User != "" && service.User != "root" {
+			// Lookup user in /etc/passwd
+			u, err := user.Lookup(service.User)
+			if err != nil {
+				return err
+			}
+
+			// Get user id and group id
+			uid, err := strconv.Atoi(u.Uid)
+			if err != nil {
+				return err
+			}
+			gid, err := strconv.Atoi(u.Gid)
+			if err != nil {
+				return err
+			}
+
+			cmd.SysProcAttr.Credential = &syscall.Credential{
+				Uid: uint32(uid),
+				Gid: uint32(gid),
+			}
+		}
+
 		if err := cmd.Run(); err != nil {
 			return err
 		}
