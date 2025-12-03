@@ -1,6 +1,5 @@
 name: lo-interface
 description: Enable loopback interface on boot
-dependencies: ["/usr/sbin/ip"]
 type: simple
 start_cmd: ip link set lo up
 exit_method: kill
