@@ -44,7 +44,6 @@ type EnitService struct {
 	Description      string `yaml:"description,omitempty"`
 	Type             string `yaml:"type"`
 	StartCmd         string `yaml:"start_cmd"`
-	ExitMethod       string `yaml:"exit_method"`
 	CrashOnSafeExit  bool   `yaml:"crash_on_safe_exit"`
 	StopCmd          string `yaml:"stop_cmd,omitempty"`
 	User             string `yaml:"user,omitempty"`
@@ -157,7 +156,6 @@ func LoadService(filepath string) {
 		Description:      "",
 		Type:             "",
 		StartCmd:         "",
-		ExitMethod:       "",
 		StopCmd:          "",
 		User:             "",
 		Restart:          "",
@@ -191,13 +189,6 @@ func LoadService(filepath string) {
 	case "simple", "background":
 	default:
 		logger.Printf("Error: unknown service type (%s)", newService.Type)
-		return
-	}
-
-	switch newService.ExitMethod {
-	case "stop_command", "kill":
-	default:
-		logger.Printf("Error: unknown exit method (%s)\n", newService.ExitMethod)
 		return
 	}
 
@@ -352,7 +343,7 @@ func (service *EnitService) StartService() (err error) {
 
 			if service.Type == "simple" && err == nil {
 				service.restartCount = 0
-				if service.ExitMethod != "stop_command" {
+				if strings.TrimSpace(service.StopCmd) == "" {
 					service.state = EnitServiceCompleted
 
 					// Reload service if needed
@@ -428,7 +419,7 @@ func (service *EnitService) StopService() error {
 		}
 	}()
 
-	if service.ExitMethod == "kill" {
+	if strings.TrimSpace(service.StopCmd) == "" {
 		if err := service.GetProcess().Signal(syscall.Signal(0)); err != nil {
 			newServiceStatus = EnitServiceStopped
 			logger.Printf("Service (%s) has stopped (Process already dead)", service.Name)
