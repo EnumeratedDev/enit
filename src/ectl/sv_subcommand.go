@@ -45,10 +45,6 @@ func handleServiceSubcommand() {
 		currentFlagSet.BoolP("json", "j", false, "Return output in json format")
 		setupFlagsAndHelp(currentFlagSet, fmt.Sprintf("ectl %s %s <options> <service>", os.Args[1], subcommand), fmt.Sprintf("%s the specified service", strings.Title(subcommand)), os.Args[3:])
 
-		// Dial esvm socket
-		dialSocket()
-		defer conn.Close()
-
 		enableDisableService(subcommand)
 	case "status":
 		// Setup flags and help
@@ -158,67 +154,57 @@ func enableDisableService(subcommand string) {
 		return
 	}
 
+	service := currentFlagSet.Arg(0)
+
 	// Get service stage
 	stage := 3
-	if len(currentFlagSet.Args()) > 1 {
+	if subcommand == "disable" {
+		stage = 0
+	} else if len(currentFlagSet.Args()) > 1 {
 		flagStr := currentFlagSet.Arg(1)
 		_stage, err := strconv.ParseInt(flagStr, 10, 32)
 		if err != nil {
 			log.Fatalf("Error: could not parse stage number: %s", err)
 		}
 		stage = int(_stage)
-	} else if subcommand == "disable" {
-		stage = 0
 	}
 
-	type ServiceCommandJsonStruct struct {
-		Command string `json:"command"`
-		Service string `json:"service"`
-		Stage   int    `json:"stage"`
-	}
-	serviceCommandJson := ServiceCommandJsonStruct{
-		Command: "set_enabled",
-		Service: currentFlagSet.Arg(0),
-		Stage:   stage,
+	verb := "enabled"
+	if stage == 0 {
+		verb = "disabled"
 	}
 
-	// Encode struct to json string
-	jsonData, err := json.Marshal(serviceCommandJson)
-	if err != nil {
-		log.Fatalf("Could not encode JSON data! Error: %s\n", err)
-	}
-
-	_, err = conn.Write(jsonData)
-	if err != nil {
-		log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
-	}
-
-	// Read data from the connection.
-	data, err := readAllConn(conn)
-	if err != nil {
-		log.Fatalf("Could not read data from socket! Error: %s\n", err)
+	// Return if service is already enabled
+	if _, enabledStage := isServiceEnabled(service); enabledStage == stage {
+		if printJson {
+			fmt.Printf("{\"success\":\"Service (%s) is already %s\"}\n", service, verb)
+		} else {
+			fmt.Printf("Service (%s) is already %s\n", service, verb)
+		}
 		return
 	}
 
-	// Print json data if flag is set
+	// Enable service
+	err := setServiceEnabled(service, stage)
+	if err != nil {
+		verb := "enable"
+		if stage == 0 {
+			verb = "disable"
+		}
+
+		if printJson {
+			fmt.Printf("{\"error\":\"Could not %s service! Error: %s\"}\n", verb, err)
+		} else {
+			fmt.Printf("Could not %s service! Error: %s\n", verb, err)
+		}
+		os.Exit(1)
+	}
+
 	if printJson {
-		fmt.Println(string(data))
+		fmt.Printf("{\"success\":\"Service (%s) was %s sucessfully\"}\n", service, verb)
 		return
-	}
-
-	// Decoode JSON data
-	var returnedJsonData map[string]any
-	err = json.Unmarshal(data, &returnedJsonData)
-	if err != nil {
-		log.Fatalf("Could not decode JSON data from connection!")
-	}
-
-	if err, ok := returnedJsonData["error"]; ok {
-		log.Fatal(err)
-	} else if msg, ok := returnedJsonData["success"]; ok {
-		fmt.Println(msg)
 	} else {
-		log.Fatal("Connection returned empty string!")
+		fmt.Printf("Service (%s) was %s sucessfully\n", service, verb)
 	}
 }
 
@@ -259,12 +245,6 @@ func showServiceStatus() {
 		return
 	}
 
-	// Print json data if flag is set
-	if printJson {
-		fmt.Println(string(data))
-		return
-	}
-
 	// Decoode JSON data
 	var returnedJsonData map[string]any
 	err = json.Unmarshal(data, &returnedJsonData)
@@ -273,13 +253,28 @@ func showServiceStatus() {
 	}
 
 	if err, ok := returnedJsonData["error"]; ok {
-		log.Fatal(err)
+		if printJson {
+			fmt.Println(string(data))
+			os.Exit(1)
+		} else {
+			log.Fatal(err)
+		}
+	}
+
+	// Set is_enabled and stage fields in json data
+	returnedJsonData["is_enabled"], returnedJsonData["stage"] = isServiceEnabled(currentFlagSet.Arg(0))
+
+	// Print json data if flag is set
+	if printJson {
+		data, _ = json.Marshal(returnedJsonData)
+		fmt.Println(string(data))
+		return
 	}
 
 	serviceState := returnedJsonData["state"].(string)
 	serviceDescription := returnedJsonData["description"].(string)
 	serviceEnabled := returnedJsonData["is_enabled"].(bool)
-	serviceStage := int(returnedJsonData["stage"].(float64))
+	serviceStage := returnedJsonData["stage"].(int)
 	processID := int(returnedJsonData["process_id"].(float64))
 
 	fmt.Printf("Name: %s\n", currentFlagSet.Arg(0))

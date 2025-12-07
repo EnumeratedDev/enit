@@ -511,53 +511,6 @@ func (service *EnitService) RestartService() error {
 	return nil
 }
 
-func (service *EnitService) isEnabled() (bool, int) {
-	for stage, services := range ReadEnabledServices() {
-		if slices.Contains(services, service.Name) {
-			return true, stage
-		}
-	}
-
-	return false, 0
-}
-
-func (service *EnitService) SetEnabled(stage int) error {
-	// Get current service enabled status
-	_, s := service.isEnabled()
-
-	// Return if service is already in correct state
-	if s == stage {
-		return nil
-	}
-
-	EnabledServices := ReadEnabledServices()
-
-	// Remove service from current stage
-	EnabledServices[s] = slices.DeleteFunc(EnabledServices[s], func(name string) bool {
-		return name == service.Name
-	})
-	if len(EnabledServices[s]) == 0 {
-		delete(EnabledServices, s)
-	}
-
-	// Add service to stage
-	if stage != 0 {
-		EnabledServices[stage] = append(EnabledServices[stage], service.Name)
-	}
-
-	// Save enabled services to file
-	data, err := yaml.Marshal(EnabledServices)
-	if err != nil {
-		return err
-	}
-	err = os.WriteFile(path.Join(serviceConfigDir, "enabled_services"), data, 0644)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func ReadEnabledServices() (EnabledServices map[int][]string) {
 	EnabledServices = make(map[int][]string)
 

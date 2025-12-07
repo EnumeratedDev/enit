@@ -22,7 +22,6 @@ func initSocket() (socket net.Listener, err error) {
 	commandHandlers["start"] = handleStartServiceCommand
 	commandHandlers["stop"] = handleStopServiceCommand
 	commandHandlers["restart"] = handleRestartServiceCommand
-	commandHandlers["set_enabled"] = handleSetEnabledServiceCommand
 	commandHandlers["status"] = handleStatusServiceCommand
 	commandHandlers["list"] = handleListServicesCommand
 
@@ -151,65 +150,6 @@ func handleRestartServiceCommand(conn net.Conn, jsonData map[string]any) {
 	conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) has restarted sucessfully", serviceName.(string))))
 }
 
-func handleSetEnabledServiceCommand(conn net.Conn, jsonData map[string]any) {
-	// Get service name from json data
-	serviceName, ok := jsonData["service"]
-	if !ok {
-		conn.Write(wrapErrorInJson(fmt.Errorf("'service' field missing")))
-		return
-	}
-
-	// Get service stage from json json data
-	_serviceStage, ok := jsonData["stage"]
-	if !ok {
-		conn.Write(wrapErrorInJson(fmt.Errorf("'stage' field missing")))
-		return
-	}
-	serviceStage, ok := _serviceStage.(float64)
-	if !ok {
-		conn.Write(wrapErrorInJson(fmt.Errorf("'stage' field is not a number")))
-		return
-	}
-
-	// Ensure service exists
-	service := GetServiceByName(serviceName.(string))
-	if service == nil {
-		conn.Write(wrapErrorInJson(fmt.Errorf("Service (%s) not found", serviceName.(string))))
-		return
-	}
-
-	// Get current service enabled status
-	_, s := service.isEnabled()
-
-	// Return if service is already in correct state
-	if s == int(serviceStage) {
-		if serviceStage == 0 {
-			conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) is already disabled", serviceName.(string))))
-		} else {
-			conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) is already enabled", serviceName.(string))))
-		}
-		return
-	}
-
-	// Enable service
-	err := service.SetEnabled(int(serviceStage))
-	if err != nil {
-		if serviceStage == 0 {
-			conn.Write(wrapErrorInJson(fmt.Errorf("Could not disable service! Error: %s", err)))
-		} else {
-			conn.Write(wrapErrorInJson(fmt.Errorf("Could not enable service! Error: %s", err)))
-		}
-		return
-	}
-
-	if serviceStage == 0 {
-		conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) was disabled sucessfully", serviceName.(string))))
-	} else {
-		conn.Write(wrapSuccessMsgInJson(fmt.Sprintf("Service (%s) was enabled sucessfully", serviceName.(string))))
-	}
-
-}
-
 func handleStatusServiceCommand(conn net.Conn, jsonData map[string]any) {
 	// Get service name from json data
 	serviceName, ok := jsonData["service"]
@@ -230,7 +170,6 @@ func handleStatusServiceCommand(conn net.Conn, jsonData map[string]any) {
 	statusMap["description"] = service.Description
 	statusMap["state"] = EnitServiceStateNames[service.state]
 	statusMap["process_id"] = service.processID
-	statusMap["is_enabled"], statusMap["stage"] = service.isEnabled()
 
 	// Encode map to json string
 	newJsonData, err := json.Marshal(statusMap)
@@ -253,7 +192,6 @@ func handleListServicesCommand(conn net.Conn, _ map[string]any) {
 		statusMap["description"] = service.Description
 		statusMap["state"] = EnitServiceStateNames[service.state]
 		statusMap["process_id"] = service.processID
-		statusMap["is_enabled"], statusMap["stage"] = service.isEnabled()
 		servicesMap["services"] = append(servicesMap["services"].([]map[string]any), statusMap)
 	}
 
