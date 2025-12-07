@@ -1,18 +1,10 @@
 package main
 
 import (
-	"bytes"
-	"encoding/json"
-	"flag"
 	"fmt"
-	"io"
 	"log"
-	"net"
 	"os"
-	"path"
-	"strconv"
 	"syscall"
-	"time"
 )
 
 // Build-time variables
@@ -20,413 +12,43 @@ var version = "dev"
 var sysconfdir = "/etc/"
 var runstatedir = "/var/run/"
 
-var conn net.Conn
-
 func main() {
 
-	// Set and parse flags
-	printVersion := flag.Bool("version", false, "print version and exit")
-	printJson := flag.Bool("json", false, "print output in json format")
-	flag.Parse()
-
-	if flag.NArg() < 1 {
+	// Show usage if no arguments specified
+	if len(os.Args) == 1 {
 		printUsage()
-		os.Exit(1)
+		return
 	}
 
-	if *printVersion || flag.Args()[0] == "version" {
+	subcommand := os.Args[1]
+
+	switch subcommand {
+	case "v", "version":
 		fmt.Printf("Enit Control version %s\n", version)
-		return
-	} else if flag.Args()[0] == "help" {
-		printUsage()
-		return
-	} else if flag.Args()[0] == "shutdown" || flag.Args()[0] == "poweroff" || flag.Args()[0] == "halt" {
+	case "shutdown", "poweroff", "halt":
 		err := syscall.Kill(1, syscall.SIGUSR1)
 		if err != nil {
 			log.Fatalf("Could not send shutdown signal! Error: %s\n", err)
 		}
-		return
-	} else if flag.Args()[0] == "reboot" || flag.Args()[0] == "restart" || flag.Args()[0] == "reset" {
+	case "reboot", "restart", "reset":
 		err := syscall.Kill(1, syscall.SIGTERM)
 		if err != nil {
-			log.Fatalf("Could not send shutdown signal! Error: %s\n", err)
+			log.Fatalf("Could not send reboot signal! Error: %s\n", err)
 		}
-		return
-	} else if flag.Args()[0] == "service" || flag.Args()[0] == "sv" {
-		// Dial esvm socket
-		dialSocket()
-		defer conn.Close()
-
-		if len(flag.Args()) <= 1 {
-			fmt.Println("Usage: ectl service <reload/start/stop/enable/disable/status/list> [service]")
-			return
-		}
-		if flag.Arg(1) == "reload" {
-			type ServiceCommandJsonStruct struct {
-				Command string `json:"command"`
-				Service string `json:"service"`
-			}
-			serviceCommandJson := ServiceCommandJsonStruct{
-				Command: flag.Arg(1),
-			}
-
-			// Encode struct to json string
-			jsonData, err := json.Marshal(serviceCommandJson)
-			if err != nil {
-				log.Fatalf("Could not encode JSON data! Error: %s\n", err)
-			}
-
-			_, err = conn.Write(jsonData)
-			if err != nil {
-				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
-			}
-
-			// Read data from the connection.
-			data, err := readAllConn(conn)
-			if err != nil {
-				log.Fatalf("Could not read data from socket! Error: %s\n", err)
-				return
-			}
-
-			// Print json data if flag is set
-			if *printJson {
-				fmt.Println(string(data))
-				return
-			}
-
-			// Decoode JSON data
-			var returnedJsonData map[string]any
-			err = json.Unmarshal(data, &returnedJsonData)
-			if err != nil {
-				log.Fatalf("Could not decode JSON data from connection!")
-			}
-
-			if err, ok := returnedJsonData["error"]; ok {
-				log.Fatal(err)
-			} else if msg, ok := returnedJsonData["success"]; ok {
-				fmt.Println(msg)
-			} else {
-				log.Fatal("Connection returned empty string!")
-			}
-
-			return
-		} else if flag.Arg(1) == "start" || flag.Arg(1) == "stop" || flag.Arg(1) == "restart" {
-			// Ensure service name argument has been set
-			if len(flag.Args()) <= 2 {
-				fmt.Printf("Usage: ectl service %s <service>\n", flag.Args()[1])
-				return
-			}
-
-			type ServiceCommandJsonStruct struct {
-				Command string `json:"command"`
-				Service string `json:"service"`
-			}
-			serviceCommandJson := ServiceCommandJsonStruct{
-				Command: flag.Arg(1),
-				Service: flag.Arg(2),
-			}
-
-			// Encode struct to json string
-			jsonData, err := json.Marshal(serviceCommandJson)
-			if err != nil {
-				log.Fatalf("Could not encode JSON data! Error: %s\n", err)
-			}
-
-			_, err = conn.Write(jsonData)
-			if err != nil {
-				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
-			}
-
-			// Read data from the connection.
-			data, err := readAllConn(conn)
-			if err != nil {
-				log.Fatalf("Could not read data from socket! Error: %s\n", err)
-				return
-			}
-
-			// Print json data if flag is set
-			if *printJson {
-				fmt.Println(string(data))
-				return
-			}
-
-			// Decoode JSON data
-			var returnedJsonData map[string]any
-			err = json.Unmarshal(data, &returnedJsonData)
-			if err != nil {
-				log.Fatalf("Could not decode JSON data from connection!")
-			}
-
-			if err, ok := returnedJsonData["error"]; ok {
-				log.Fatal(err)
-			} else if msg, ok := returnedJsonData["success"]; ok {
-				fmt.Println(msg)
-			} else {
-				log.Fatal("Connection returned empty string!")
-			}
-
-			return
-		} else if flag.Arg(1) == "enable" || flag.Arg(1) == "disable" {
-			// Ensure service name argument has been set
-			if len(flag.Args()) <= 2 {
-				fmt.Printf("Usage: ectl service %s <service> [stage]\n", flag.Args()[1])
-				return
-			}
-
-			// Get service stage
-			stage := 3
-			if len(flag.Args()) > 3 {
-				flagStr := flag.Arg(3)
-				_stage, err := strconv.ParseInt(flagStr, 10, 32)
-				if err != nil {
-					log.Fatalf("Error: could not parse stage number: %s", err)
-				}
-				stage = int(_stage)
-			} else if flag.Arg(1) == "disable" {
-				stage = 0
-			}
-
-			type ServiceCommandJsonStruct struct {
-				Command string `json:"command"`
-				Service string `json:"service"`
-				Stage   int    `json:"stage"`
-			}
-			serviceCommandJson := ServiceCommandJsonStruct{
-				Command: "set_enabled",
-				Service: flag.Arg(2),
-				Stage:   stage,
-			}
-
-			// Encode struct to json string
-			jsonData, err := json.Marshal(serviceCommandJson)
-			if err != nil {
-				log.Fatalf("Could not encode JSON data! Error: %s\n", err)
-			}
-
-			_, err = conn.Write(jsonData)
-			if err != nil {
-				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
-			}
-
-			// Read data from the connection.
-			data, err := readAllConn(conn)
-			if err != nil {
-				log.Fatalf("Could not read data from socket! Error: %s\n", err)
-				return
-			}
-
-			// Print json data if flag is set
-			if *printJson {
-				fmt.Println(string(data))
-				return
-			}
-
-			// Decoode JSON data
-			var returnedJsonData map[string]any
-			err = json.Unmarshal(data, &returnedJsonData)
-			if err != nil {
-				log.Fatalf("Could not decode JSON data from connection!")
-			}
-
-			if err, ok := returnedJsonData["error"]; ok {
-				log.Fatal(err)
-			} else if msg, ok := returnedJsonData["success"]; ok {
-				fmt.Println(msg)
-			} else {
-				log.Fatal("Connection returned empty string!")
-			}
-
-			return
-		} else if flag.Args()[1] == "status" {
-			// Ensure service name argument has been set
-			if len(flag.Args()) <= 2 {
-				fmt.Printf("Usage: ectl service %s <service>\n", flag.Args()[1])
-				return
-			}
-
-			type ServiceCommandJsonStruct struct {
-				Command string `json:"command"`
-				Service string `json:"service"`
-			}
-			serviceCommandJson := ServiceCommandJsonStruct{
-				Command: flag.Arg(1),
-				Service: flag.Arg(2),
-			}
-
-			// Encode struct to json string
-			jsonData, err := json.Marshal(serviceCommandJson)
-			if err != nil {
-				log.Fatalf("Could not encode JSON data! Error: %s\n", err)
-			}
-
-			_, err = conn.Write(jsonData)
-			if err != nil {
-				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
-			}
-
-			// Read data from the connection.
-			data, err := readAllConn(conn)
-			if err != nil {
-				log.Fatalf("Could not read data from socket! Error: %s\n", err)
-				return
-			}
-
-			// Print json data if flag is set
-			if *printJson {
-				fmt.Println(string(data))
-				return
-			}
-
-			// Decoode JSON data
-			var returnedJsonData map[string]any
-			err = json.Unmarshal(data, &returnedJsonData)
-			if err != nil {
-				log.Fatalf("Could not decode JSON data from connection!")
-			}
-
-			if err, ok := returnedJsonData["error"]; ok {
-				log.Fatal(err)
-			}
-
-			serviceState := returnedJsonData["state"].(string)
-			serviceDescription := returnedJsonData["description"].(string)
-			serviceEnabled := returnedJsonData["is_enabled"].(bool)
-			serviceStage := int(returnedJsonData["stage"].(float64))
-			processID := int(returnedJsonData["process_id"].(float64))
-
-			fmt.Printf("Name: %s\n", flag.Arg(2))
-			fmt.Printf("Description: %s\n", serviceDescription)
-			fmt.Printf("State: %s\n", serviceState)
-			if serviceEnabled {
-				fmt.Printf("Enabled: %t (Stage %d)\n", serviceEnabled, serviceStage)
-			} else {
-				fmt.Printf("Enabled: %t\n", serviceEnabled)
-			}
-			if serviceState == "running" {
-				fmt.Printf("Process ID: %d\n", processID)
-			}
-
-			return
-		} else if flag.Arg(1) == "list" {
-			type ServiceCommandJsonStruct struct {
-				Command string `json:"command"`
-			}
-			serviceCommandJson := ServiceCommandJsonStruct{
-				Command: flag.Arg(1),
-			}
-
-			// Encode struct to json string
-			jsonData, err := json.Marshal(serviceCommandJson)
-			if err != nil {
-				log.Fatalf("Could not encode JSON data! Error: %s\n", err)
-			}
-
-			_, err = conn.Write(jsonData)
-			if err != nil {
-				log.Fatalf("Could not write JSON data to socket! Error: %s\n", err)
-			}
-
-			// Read data from the connection.
-			data, err := readAllConn(conn)
-			if err != nil {
-				log.Fatalf("Could not read data from socket! Error: %s\n", err)
-				return
-			}
-
-			// Print json data if flag is set
-			if *printJson {
-				fmt.Println(string(data))
-				return
-			}
-
-			// Decoode JSON data
-			var returnedJsonData map[string]any
-			err = json.Unmarshal(data, &returnedJsonData)
-			if err != nil {
-				log.Fatalf("Could not decode JSON data from connection!")
-			}
-
-			if err, ok := returnedJsonData["error"]; ok {
-				log.Fatal(err)
-			}
-
-			for _, serviceMap := range returnedJsonData["services"].([]any) {
-				serviceName := serviceMap.(map[string]any)["name"].(string)
-				serviceDescription := serviceMap.(map[string]any)["description"].(string)
-				serviceState := serviceMap.(map[string]any)["state"].(string)
-				serviceEnabled := serviceMap.(map[string]any)["is_enabled"].(bool)
-				serviceStage := int(serviceMap.(map[string]any)["stage"].(float64))
-				processID := int(serviceMap.(map[string]any)["process_id"].(float64))
-
-				fmt.Printf("Name: %s\n", serviceName)
-				fmt.Printf("Description: %s\n", serviceDescription)
-				fmt.Printf("State: %s\n", serviceState)
-				if serviceEnabled {
-					fmt.Printf("Enabled: %t (Stage %d)\n", serviceEnabled, serviceStage)
-				} else {
-					fmt.Printf("Enabled: %t\n", serviceEnabled)
-				}
-				if serviceState == "running" {
-					fmt.Printf("Process ID: %d\n", processID)
-				}
-				fmt.Println()
-			}
-
-			return
-		}
+	case "sv", "service":
+		handleServiceSubcommand()
+	default:
+		printUsage()
+		os.Exit(1)
 	}
-
-	printUsage()
-	os.Exit(1)
 }
 
 func printUsage() {
-	fmt.Println("Available sucommands:")
-	fmt.Println("ectl version | Show enit version")
-	fmt.Println("ectl shutdown/poweroff/halt | Shutdown the system")
-	fmt.Println("ectl reboot/restart | Reboot the system")
-	fmt.Println("ectl help | Show command explanations")
-	fmt.Println("ectl sv/service start <service> | Start a service")
-	fmt.Println("ectl sv/service stop <service> | Stop a service")
-	fmt.Println("ectl sv/service enable <service> | Enable a service at startup")
-	fmt.Println("ectl sv/service disable <service> | Disable a service at startup")
-	fmt.Println("ectl sv/service status <service> | Show service status")
-	fmt.Println("ectl sv/service list | Show all enabled services")
-}
-
-func dialSocket() {
-	if _, err := os.Stat(path.Join(runstatedir, "esvm/esvm.sock")); err != nil {
-		log.Fatalf("Could not find esvm.sock! Error: %s\n", err)
-	}
-
-	var err error
-	conn, err = net.Dial("unix", path.Join(runstatedir, "esvm/esvm.sock"))
-	if err != nil {
-		log.Fatalf("Failed to connect to esvm.sock! Error: %s\n", err)
-	}
-
-	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
-		log.Fatalf("Failed to set write deadline! Error: %s\n", err)
-	}
-}
-
-func readAllConn(conn net.Conn) ([]byte, error) {
-	var buf bytes.Buffer
-
-	for {
-		dataChunk := make([]byte, 1024)
-
-		n, err := conn.Read(dataChunk)
-		if err != nil && err != io.EOF {
-			return nil, err
-		}
-
-		buf.Write(dataChunk[:n])
-
-		if n < 1024 {
-			break
-		}
-	}
-
-	return buf.Bytes(), nil
+	fmt.Println("Usage: ectl <subcommand> [options]")
+	fmt.Println("Description: Shutdown, reboot and manage system services")
+	fmt.Println("Sucommands:")
+	fmt.Println("  v, version                 Show enit version")
+	fmt.Println("  shutdown, poweroff, halt   Shutdown the system")
+	fmt.Println("  reboot, restart, reset     Reboot the system")
+	fmt.Println("  sv, service                Manage system services")
 }
