@@ -29,10 +29,6 @@ func main() {
 	printJson := flag.Bool("json", false, "print output in json format")
 	flag.Parse()
 
-	// Dial esvm socket
-	dialSocket()
-	defer conn.Close()
-
 	if flag.NArg() < 1 {
 		printUsage()
 		os.Exit(1)
@@ -57,6 +53,10 @@ func main() {
 		}
 		return
 	} else if flag.Args()[0] == "service" || flag.Args()[0] == "sv" {
+		// Dial esvm socket
+		dialSocket()
+		defer conn.Close()
+
 		if len(flag.Args()) <= 1 {
 			fmt.Println("Usage: ectl service <reload/start/stop/enable/disable/status/list> [service]")
 			return
