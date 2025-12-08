@@ -514,28 +514,13 @@ func (service *EnitService) RestartService() error {
 func ReadEnabledServices() (EnabledServices map[int][]string) {
 	EnabledServices = make(map[int][]string)
 
-	data, err := os.ReadFile(path.Join(serviceConfigDir, "enabled_services"))
+	data, err := os.ReadFile(path.Join(serviceConfigDir, "enabled-services.yml"))
 	if err != nil {
 		return EnabledServices
 	}
 
 	err = yaml.Unmarshal(data, &EnabledServices)
 	if err != nil {
-		// Assume old plain text format
-		for _, service := range strings.Split(strings.TrimSpace(string(data)), "\n") {
-			EnabledServices[3] = append(EnabledServices[3], service)
-		}
-
-		// Update enabled_services file
-		data, err := yaml.Marshal(EnabledServices)
-		if err != nil {
-			return EnabledServices
-		}
-		err = os.WriteFile(path.Join(serviceConfigDir, "enabled_services"), data, 0644)
-		if err != nil {
-			return EnabledServices
-		}
-
 		return EnabledServices
 	}
 

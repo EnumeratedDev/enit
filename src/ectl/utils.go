@@ -48,7 +48,7 @@ func setServiceEnabled(service string, stage int) error {
 	if err != nil {
 		return err
 	}
-	err = os.WriteFile(path.Join(sysconfdir, "esvm/enabled_services"), data, 0644)
+	err = os.WriteFile(path.Join(sysconfdir, "esvm/enabled-services.yml"), data, 0644)
 	if err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func setServiceEnabled(service string, stage int) error {
 func readEnabledServices() (EnabledServices map[int][]string) {
 	EnabledServices = make(map[int][]string)
 
-	data, err := os.ReadFile(path.Join(sysconfdir, "esvm/enabled_services"))
+	data, err := os.ReadFile(path.Join(sysconfdir, "esvm/enabled-services.yml"))
 	if err != nil {
 		return EnabledServices
 	}
@@ -71,12 +71,12 @@ func readEnabledServices() (EnabledServices map[int][]string) {
 			EnabledServices[3] = append(EnabledServices[3], service)
 		}
 
-		// Update enabled_services file
+		// Update enabled-services.yml file
 		data, err := yaml.Marshal(EnabledServices)
 		if err != nil {
 			return EnabledServices
 		}
-		err = os.WriteFile(path.Join(sysconfdir, "esvm/enabled_services"), data, 0644)
+		err = os.WriteFile(path.Join(sysconfdir, "esvm/enabled-services.yml"), data, 0644)
 		if err != nil {
 			return EnabledServices
 		}
