@@ -319,12 +319,6 @@ func listAllServices() {
 		return
 	}
 
-	// Print json data if flag is set
-	if printJson {
-		fmt.Println(string(data))
-		return
-	}
-
 	// Decoode JSON data
 	var returnedJsonData map[string]any
 	err = json.Unmarshal(data, &returnedJsonData)
@@ -336,12 +330,24 @@ func listAllServices() {
 		log.Fatal(err)
 	}
 
+	// Set is_enabled and stage fields in json data
+	for _, serviceMap := range returnedJsonData["services"].([]any) {
+		serviceMap.(map[string]any)["is_enabled"], serviceMap.(map[string]any)["stage"] = isServiceEnabled(serviceMap.(map[string]any)["name"].(string))
+	}
+
+	// Print json data if flag is set
+	if printJson {
+		data, _ = json.Marshal(returnedJsonData)
+		fmt.Println(string(data))
+		return
+	}
+
 	for _, serviceMap := range returnedJsonData["services"].([]any) {
 		serviceName := serviceMap.(map[string]any)["name"].(string)
 		serviceDescription := serviceMap.(map[string]any)["description"].(string)
 		serviceState := serviceMap.(map[string]any)["state"].(string)
 		serviceEnabled := serviceMap.(map[string]any)["is_enabled"].(bool)
-		serviceStage := int(serviceMap.(map[string]any)["stage"].(float64))
+		serviceStage := int(serviceMap.(map[string]any)["stage"].(int))
 		processID := int(serviceMap.(map[string]any)["process_id"].(float64))
 
 		fmt.Printf("Name: %s\n", serviceName)
