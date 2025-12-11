@@ -285,7 +285,7 @@ func showServiceStatus() {
 	} else {
 		fmt.Printf("Enabled: %t\n", serviceEnabled)
 	}
-	if serviceState == "running" {
+	if serviceState == "running" && processID > 0 {
 		fmt.Printf("Process ID: %d\n", processID)
 	}
 }
@@ -358,7 +358,7 @@ func listAllServices() {
 		} else {
 			fmt.Printf("Enabled: %t\n", serviceEnabled)
 		}
-		if serviceState == "running" {
+		if serviceState == "running" && processID > 0 {
 			fmt.Printf("Process ID: %d\n", processID)
 		}
 		fmt.Println()
