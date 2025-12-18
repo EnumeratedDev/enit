@@ -1,0 +1,4 @@
+name: rc-local
+description: Run the /etc/rc.local script at boot
+type: simple
+start_cmd: /etc/rc.local
