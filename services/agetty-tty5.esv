@@ -2,7 +2,6 @@ name: agetty-tty5
 description: Start virtual terminal on tty5
 type: background
 start_cmd: /usr/bin/setsid /sbin/agetty tty5
-exit_method: kill
 crash_on_safe_exit: false
 restart: always
 setpgid: false
