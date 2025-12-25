@@ -158,21 +158,75 @@ func mountFstabEntries() (error, int) {
 		fstype := fields[2]
 		options := fields[3]
 
-		// Replace device prefixes
-		if cutSource, ok := strings.CutPrefix(source, "LABEL="); ok {
-			source = "/dev/disk/by-label/" + strings.ReplaceAll(cutSource, " ", "\\x20")
-		} else if cutSource, ok := strings.CutPrefix(source, "UUID="); ok {
-			source = "/dev/disk/by-uuid/" + cutSource
-		} else if cutSource, ok := strings.CutPrefix(source, "PARTLABEL="); ok {
-			source = "/dev/disk/by-partlabel/" + cutSource
-		} else if cutSource, ok := strings.CutPrefix(source, "PARTUUID="); ok {
-			source = "/dev/disk/by-partuuid/" + cutSource
-		}
-
+		// Convert mount options
 		flags, data, extra := convertMountOptions(options)
 
+		// Skip if noauto flag is set
 		if slices.Contains(extra, "noauto") {
 			continue
+		}
+
+		// Get block devices
+		blockDevices := GetBlockDevices()
+
+		// Replace device prefixes
+		if strings.Contains(source, "=") {
+			fieldSplit := strings.SplitN(source, "=", 2)
+			if len(fieldSplit) != 2 {
+				if slices.Contains(extra, "nofail") {
+					fmt.Printf("Warning: could not mount fstab entry on line %d: Formatting error\n", i+1)
+					continue
+				} else {
+					return fmt.Errorf("Formatting error"), i + 1
+				}
+			}
+
+			fieldName := fieldSplit[0]
+			fieldValue := fieldSplit[1]
+
+			// Reset source field
+			source = ""
+
+			for _, bd := range blockDevices {
+				bdField := ""
+
+				switch fieldName {
+				case "LABEL":
+					bdField = bd.Label
+				case "UUID":
+					bdField = bd.UUID
+				case "PARTLABEL":
+					bdField = bd.PartLabel
+				case "PARTUUID":
+					bdField = bd.PartUUID
+				default:
+					if slices.Contains(extra, "nofail") {
+						fmt.Printf("Warning: could not mount fstab entry on line %d: Formatting error\n", i+1)
+						continue
+					} else {
+						return fmt.Errorf("Formatting error"), i + 1
+					}
+				}
+
+				if bdField == "" {
+					continue
+				}
+
+				if bdField == fieldValue {
+					source = bd.Device
+					break
+				}
+			}
+
+			// Ensure source was set
+			if source == "" {
+				if slices.Contains(extra, "nofail") {
+					fmt.Printf("Warning: could not mount fstab entry on line %d: could not resolve %s=\"%s\"\n", i+1, fieldName, fieldValue)
+					continue
+				} else {
+					return fmt.Errorf("could not resolve %s=\"%s\"", fieldName, fieldValue), i + 1
+				}
+			}
 		}
 
 		if fstype == "swap" {
