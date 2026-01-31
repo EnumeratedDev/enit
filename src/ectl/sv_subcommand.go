@@ -190,6 +190,18 @@ func enableDisableService(subcommand string) {
 		verb = "disabled"
 	}
 
+	// Ensure service exists
+	if stage != 0 {
+		if !serviceExists(service) {
+			if printJson {
+				fmt.Printf("{\"error\":\"Service (%s) does not exist\"}\n", verb)
+			} else {
+				fmt.Printf("Service (%s) does not exist\n", verb)
+			}
+			os.Exit(1)
+		}
+	}
+
 	// Return if service is already enabled
 	if _, enabledStage := isServiceEnabled(service); enabledStage == stage {
 		if printJson {

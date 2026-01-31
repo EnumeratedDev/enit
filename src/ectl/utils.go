@@ -9,6 +9,30 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func serviceExists(service string) bool {
+	dirEntries, err := os.ReadDir(path.Join(sysconfdir, "esvm/services"))
+	if err != nil {
+		return false
+	}
+
+	for _, entry := range dirEntries {
+		var dataMap map[string]any
+
+		data, err := os.ReadFile(path.Join(sysconfdir, "esvm/services", entry.Name()))
+
+		err = yaml.Unmarshal(data, &dataMap)
+		if err != nil {
+			return false
+		}
+
+		if name, ok := dataMap["name"]; ok && name == service {
+			return true
+		}
+	}
+
+	return false
+}
+
 func isServiceEnabled(service string) (bool, int) {
 	for stage, services := range readEnabledServices() {
 		if slices.Contains(services, service) {
