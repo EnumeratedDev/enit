@@ -35,8 +35,12 @@ func handleServiceSubcommand() {
 		setupFlagsAndHelp(currentFlagSet, fmt.Sprintf("ectl %s %s <options> <service>", os.Args[1], subcommand), fmt.Sprintf("%s the specified service", strings.Title(subcommand)), os.Args[3:])
 
 		// Dial esvm socket
-		dialSocket()
-		defer conn.Close()
+		err := dialSocket()
+		if err == nil {
+			defer conn.Close()
+		} else {
+			log.Fatalf("Error: %s", err)
+		}
 
 		startStopRestartService(subcommand)
 	case "enable", "disable":
@@ -53,8 +57,12 @@ func handleServiceSubcommand() {
 		setupFlagsAndHelp(currentFlagSet, fmt.Sprintf("ectl %s status <options> <service>", os.Args[1]), "Show service status", os.Args[3:])
 
 		// Dial esvm socket
-		dialSocket()
-		defer conn.Close()
+		err := dialSocket()
+		if err == nil {
+			defer conn.Close()
+		} else {
+			log.Fatalf("Error: %s", err)
+		}
 
 		showServiceStatus()
 	case "list":
@@ -64,8 +72,12 @@ func handleServiceSubcommand() {
 		setupFlagsAndHelp(currentFlagSet, fmt.Sprintf("ectl %s reload <options>", os.Args[1]), "List all services", os.Args[3:])
 
 		// Dial esvm socket
-		dialSocket()
-		defer conn.Close()
+		err := dialSocket()
+		if err == nil {
+			defer conn.Close()
+		} else {
+			log.Fatalf("Error: %s", err)
+		}
 
 		listAllServices()
 	case "reload":
@@ -75,8 +87,12 @@ func handleServiceSubcommand() {
 		setupFlagsAndHelp(currentFlagSet, fmt.Sprintf("ectl %s reload <options>", os.Args[1]), "Reload all services", os.Args[3:])
 
 		// Dial esvm socket
-		dialSocket()
-		defer conn.Close()
+		err := dialSocket()
+		if err == nil {
+			defer conn.Close()
+		} else {
+			log.Fatalf("Error: %s", err)
+		}
 
 		reloadAllServices()
 	default:
@@ -444,20 +460,22 @@ func setupFlagsAndHelp(flagset *flag.FlagSet, usage, desc string, args []string)
 	flagset.Parse(args)
 }
 
-func dialSocket() {
+func dialSocket() error {
 	if _, err := os.Stat(path.Join(runstatedir, "esvm/esvm.sock")); err != nil {
-		log.Fatalf("Could not find esvm.sock! Error: %s\n", err)
+		return fmt.Errorf("could not find socket! Error: %s", err)
 	}
 
 	var err error
 	conn, err = net.Dial("unix", path.Join(runstatedir, "esvm/esvm.sock"))
 	if err != nil {
-		log.Fatalf("Failed to connect to esvm.sock! Error: %s\n", err)
+		return fmt.Errorf("could not connect to socket! Error: %s", err)
 	}
 
 	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
-		log.Fatalf("Failed to set write deadline! Error: %s\n", err)
+		return fmt.Errorf("failed to set socket deadline! Error: %s", err)
 	}
+
+	return nil
 }
 
 func readAllConn(conn net.Conn) ([]byte, error) {
