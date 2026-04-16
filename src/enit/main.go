@@ -51,6 +51,8 @@ func main() {
 	mountVirtualFilesystems()
 	// Mount filesystems in fstab
 	mountFilesystems()
+	// Run sysctl
+	initSysctl()
 	// Set hostname
 	setHostname()
 	// Start service manager
@@ -215,6 +217,23 @@ func killProcesses() {
 		}
 
 		syscall.Kill(process.Pid(), syscall.SIGKILL)
+	}
+
+	fmt.Println("Done.")
+}
+
+func initSysctl() {
+	// Return if sysctl cannot be found
+	if _, err := os.Stat("/sbin/sysctl"); err != nil {
+		return
+	}
+
+	fmt.Print("Running sysctl...")
+
+	err := exec.Command("/sbin/sysctl", "--system").Run()
+	if err != nil {
+		log.Println("Failed!")
+		return
 	}
 
 	fmt.Println("Done.")
